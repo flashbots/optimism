@@ -1,0 +1,5 @@
+ignores: [
+  "@openzeppelin/contracts",
+  "prettier-plugin-solidity",
+  "solhint-plugin-prettier",
+]
