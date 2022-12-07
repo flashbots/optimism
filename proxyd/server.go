@@ -170,8 +170,11 @@ func (s *Server) RPCListenAndServe(host string, port int) error {
 	})
 	addr := fmt.Sprintf("%s:%d", host, port)
 	s.rpcServer = &http.Server{
-		Handler: instrumentedHdlr(c.Handler(hdlr)),
-		Addr:    addr,
+		Handler:      instrumentedHdlr(c.Handler(hdlr)),
+		Addr:         addr,
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 10 * time.Second,
+		IdleTimeout:  63 * time.Second,
 	}
 	log.Info("starting HTTP server", "addr", addr)
 	s.srvMu.Unlock()
