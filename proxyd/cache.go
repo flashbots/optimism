@@ -18,7 +18,7 @@ const (
 	// assuming an average RPCRes size of 3 KB
 	memoryCacheLimit = 4096
 	// Set a large ttl to avoid expirations. However, a ttl must be set for volatile-lru to take effect.
-	redisTTL = 30 * 7 * 24 * time.Hour
+	redisTTL = 24 * time.Hour
 )
 
 type cache struct {
