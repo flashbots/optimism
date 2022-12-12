@@ -44,10 +44,15 @@ func (c *cache) Put(ctx context.Context, key string, value string) error {
 
 type redisCache struct {
 	rdb *redis.Client
+	ttl time.Duration
 }
 
-func newRedisCache(rdb *redis.Client) *redisCache {
-	return &redisCache{rdb}
+func newRedisCache(rdb *redis.Client, ttl int) *redisCache {
+	_ttl := time.Hour * time.Duration(ttl)
+	if _ttl == 0 {
+		_ttl = time.Hour * redisTTL // use default if ttl not set
+	}
+	return &redisCache{rdb, _ttl}
 }
 
 func (c *redisCache) Get(ctx context.Context, key string) (string, error) {
@@ -66,7 +71,7 @@ func (c *redisCache) Get(ctx context.Context, key string) (string, error) {
 
 func (c *redisCache) Put(ctx context.Context, key string, value string) error {
 	start := time.Now()
-	err := c.rdb.SetEX(ctx, key, value, redisTTL).Err()
+	err := c.rdb.SetEX(ctx, key, value, c.ttl).Err()
 	redisCacheDurationSumm.WithLabelValues("SETEX").Observe(float64(time.Since(start).Milliseconds()))
 
 	if err != nil {
