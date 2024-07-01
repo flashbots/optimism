@@ -256,14 +256,6 @@ func (s *Driver) eventLoop() {
 					s.log.Warn("Failed to insert unsafe payload for EL sync", "id", envelope.ExecutionPayload.ID(), "err", err)
 				}
 			}
-			if ref.Number <= s.engineController.UnsafeL2Head().Number {
-				continue
-			}
-			s.log.Info("Optimistically inserting unsafe L2 execution payload to drive EL sync", "id", envelope.ExecutionPayload.ID())
-			if err := s.engineController.InsertUnsafePayload(s.driverCtx, envelope, ref); err != nil {
-				s.log.Warn("Failed to insert unsafe payload for EL sync", "id", envelope.ExecutionPayload.ID(), "err", err)
-			}
-			s.PublishL2Attributes(s.driverCtx, ref)
 		case newL1Head := <-s.l1HeadSig:
 			s.Emitter.Emit(status.L1UnsafeEvent{L1Unsafe: newL1Head})
 			reqStep() // a new L1 head may mean we have the data to not get an EOF again.

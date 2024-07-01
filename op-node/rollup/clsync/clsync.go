@@ -183,3 +183,35 @@ func (eq *CLSync) onUnsafePayload(x ReceivedUnsafePayloadEvent) {
 	// request forkchoice signal, so we can process the payload maybe
 	eq.emitter.Emit(engine.ForkchoiceRequestEvent{})
 }
+
+func (eq *CLSync) PublishAttributes(ctx context.Context, l2head eth.L2BlockRef) error {
+	l1Origin, err := eq.l1OriginSelector.FindL1Origin(ctx, l2head)
+	if err != nil {
+		eq.log.Error("Error finding next L1 Origin", "err", err)
+		return err
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
+	defer cancel()
+
+	attrs, err := eq.attrBuilder.PreparePayloadAttributes(fetchCtx, l2head, l1Origin.ID())
+	if err != nil {
+		eq.log.Error("Error preparing payload attributes", "err", err)
+		return err
+	}
+
+	withParent := &derive.AttributesWithParent{
+		Attributes:   attrs,
+		Parent:       l2head,
+		IsLastInSpan: false,
+	}
+
+	log.Info("Publishing L2 attributes", "attrs", withParent)
+	err = eq.n.PublishL2Attributes(ctx, withParent)
+	if err != nil {
+		eq.log.Error("Error publishing L2 attributes", "err", err)
+		return err
+	}
+
+	return nil
+}
