@@ -155,6 +155,7 @@ func NewDriver(
 	cfg *rollup.Config,
 	l2 L2Chain,
 	l1 L1Chain,
+	builder derive.BuilderClient,
 	l1Blobs derive.L1BlobsFetcher,
 	altSync AltSync,
 	network Network,
