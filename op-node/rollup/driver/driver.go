@@ -123,6 +123,7 @@ type SyncStatusTracker interface {
 type Network interface {
 	// PublishL2Payload is called by the driver whenever there is a new payload to publish, synchronously with the driver main loop.
 	PublishL2Payload(ctx context.Context, payload *eth.ExecutionPayloadEnvelope) error
+	PublishL2Attributes(ctx context.Context, attrs *derive.AttributesWithParent) error
 }
 
 type AltSync interface {

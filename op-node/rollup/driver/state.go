@@ -256,6 +256,14 @@ func (s *Driver) eventLoop() {
 					s.log.Warn("Failed to insert unsafe payload for EL sync", "id", envelope.ExecutionPayload.ID(), "err", err)
 				}
 			}
+			if ref.Number <= s.engineController.UnsafeL2Head().Number {
+				continue
+			}
+			s.log.Info("Optimistically inserting unsafe L2 execution payload to drive EL sync", "id", envelope.ExecutionPayload.ID())
+			if err := s.engineController.InsertUnsafePayload(s.driverCtx, envelope, ref); err != nil {
+				s.log.Warn("Failed to insert unsafe payload for EL sync", "id", envelope.ExecutionPayload.ID(), "err", err)
+			}
+			s.PublishL2Attributes(s.driverCtx, ref)
 		case newL1Head := <-s.l1HeadSig:
 			s.Emitter.Emit(status.L1UnsafeEvent{L1Unsafe: newL1Head})
 			reqStep() // a new L1 head may mean we have the data to not get an EOF again.
@@ -472,6 +480,37 @@ func (s *SyncDeriver) SyncStep() error {
 	// Upon the pending-safe signal the attributes deriver can then ask the pipeline
 	// to generate new attributes, if no attributes are known already.
 	s.Emitter.Emit(engine.PendingSafeRequestEvent{})
+	return nil
+}
+
+func (d *Driver) PublishL2Attributes(ctx context.Context, l2head eth.L2BlockRef) error {
+	l1Origin, err := d.l1OriginSelector.FindL1Origin(ctx, l2head)
+	if err != nil {
+		d.log.Error("Error finding next L1 Origin", "err", err)
+		return err
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
+	defer cancel()
+
+	attrs, err := d.attrBuilder.PreparePayloadAttributes(fetchCtx, l2head, l1Origin.ID())
+	if err != nil {
+		d.log.Error("Error preparing payload attributes", "err", err)
+		return err
+	}
+
+	withParent := &derive.AttributesWithParent{
+		Attributes:   attrs,
+		Parent:       l2head,
+		IsLastInSpan: false,
+	}
+	log.Info("Publishing L2 attributes", "attrs", withParent)
+	err = d.network.PublishL2Attributes(ctx, withParent)
+	if err != nil {
+		d.log.Error("Error publishing L2 attributes", "err", err)
+		return err
+	}
+
 	return nil
 }
 
