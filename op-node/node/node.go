@@ -54,15 +54,14 @@ type OpNode struct {
 	l1SafeSub      ethereum.Subscription // Subscription to get L1 safe blocks, a.k.a. justified data (polling)
 	l1FinalizedSub ethereum.Subscription // Subscription to get L1 safe blocks, a.k.a. justified data (polling)
 
-	l1Source        *sources.L1Client         // L1 Client to fetch data from
-	l2Driver        *driver.Driver            // L2 Engine to Sync
-	l2Source        *sources.EngineClient     // L2 Execution Engine RPC bindings
-	l2BuilderSource *sources.BuilderAPIClient // L2 Builder API bindings
-	server          *rpcServer                // RPC server hosting the rollup-node API
-	p2pNode         *p2p.NodeP2P              // P2P node functionality
-	p2pSigner       p2p.Signer                // p2p gossip application messages will be signed with this signer
-	tracer          Tracer                    // tracer to get events for testing/debugging
-	runCfg          *RuntimeConfig            // runtime configurables
+	l1Source  *sources.L1Client     // L1 Client to fetch data from
+	l2Driver  *driver.Driver        // L2 Engine to Sync
+	l2Source  *sources.EngineClient // L2 Execution Engine RPC bindings
+	server    *rpcServer            // RPC server hosting the rollup-node API
+	p2pNode   *p2p.NodeP2P          // P2P node functionality
+	p2pSigner p2p.Signer            // p2p gossip application messages will be signed with this signer
+	tracer    Tracer                // tracer to get events for testing/debugging
+	runCfg    *RuntimeConfig        // runtime configurables
 
 	safeDB closableSafeDB
 
@@ -389,8 +388,6 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config) error {
 		return fmt.Errorf("failed to create Engine client: %w", err)
 	}
 
-	n.l2BuilderSource = sources.NewBuilderAPIClient(snapshotLog, bCfg)
-
 	if err := cfg.Rollup.ValidateL2Config(ctx, n.l2Source, cfg.Sync.SyncMode == sync.ELSync); err != nil {
 		return err
 	}
@@ -398,6 +395,11 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config) error {
 	var sequencerConductor conductor.SequencerConductor = &conductor.NoOpConductor{}
 	if cfg.ConductorEnabled {
 		sequencerConductor = NewConductorClient(cfg, n.log, n.metrics)
+	}
+
+	var payloadBuilder builder.PayloadBuilder = &builder.NoOpBuilder{}
+	if cfg.BuilderEnabled {
+		payloadBuilder = NewBuilderClient(n.log, cfg.BuilderEndpoint, cfg.BuilderTimeout)
 	}
 
 	// if plasma is not explicitly activated in the node CLI, the config + any error will be ignored.
