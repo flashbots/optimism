@@ -172,6 +172,7 @@ type (
 type ExecutionPayloadEnvelope struct {
 	ParentBeaconBlockRoot *common.Hash      `json:"parentBeaconBlockRoot,omitempty"`
 	ExecutionPayload      *ExecutionPayload `json:"executionPayload"`
+	BlockValue            *Uint256Quantity  `json:"blockValue,omitempty"`
 }
 
 type ExecutionPayload struct {
