@@ -206,10 +206,8 @@ func (eq *CLSync) PublishAttributes(ctx context.Context, l2head eth.L2BlockRef) 
 		IsLastInSpan: false,
 	}
 
-	log.Info("Publishing L2 attributes", "attrs", withParent)
 	err = eq.n.PublishL2Attributes(ctx, withParent)
 	if err != nil {
-		eq.log.Error("Error publishing L2 attributes", "err", err)
 		return err
 	}
 
