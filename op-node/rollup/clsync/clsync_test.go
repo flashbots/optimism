@@ -38,6 +38,19 @@ func TestCLSync(t *testing.T) {
 		InfoGasUsed:     rng.Uint64(),
 	}
 
+	fakeL1 := &fakeL1OriginSelector{
+		hash:       aL1Info.InfoHash,
+		number:     aL1Info.InfoNum,
+		parentHash: aL1Info.InfoParentHash,
+		time:       aL1Info.InfoTime,
+	}
+
+	fakeNetwork := &fakeNetwork{}
+
+	fakeAttrBuilder := &fakeAttributesBuilder{
+		attrs: nil,
+	}
+
 	refA0 := eth.L2BlockRef{
 		Hash:           testutils.RandomHash(rng),
 		Number:         0,
@@ -102,6 +115,17 @@ func TestCLSync(t *testing.T) {
 		BlockHash:     refA1.Hash,
 		Transactions:  []eth.Data{a1L1Info},
 	}}
+	attrA1 := &eth.PayloadAttributes{
+		Timestamp:             eth.Uint64Quantity(refA1.Time),
+		PrevRandao:            eth.Bytes32{},
+		SuggestedFeeRecipient: common.Address{},
+		Withdrawals:           &types.Withdrawals{},
+		ParentBeaconBlockRoot: nil,
+		Transactions:          []eth.Data{a1L1Info},
+		NoTxPool:              true,
+		GasLimit:              &gasLimit,
+	}
+
 	a2L1Info, err := derive.L1InfoDepositBytes(cfg, cfg.Genesis.SystemConfig, refA2.SequenceNumber, aL1Info, refA2.Time)
 	require.NoError(t, err)
 	payloadA2 := &eth.ExecutionPayloadEnvelope{ExecutionPayload: &eth.ExecutionPayload{
@@ -381,5 +405,32 @@ func TestCLSync(t *testing.T) {
 		cl.OnEvent(engine.PayloadInvalidEvent{Envelope: payloadA1, Err: errors.New("test err")})
 		emitter.AssertExpectations(t)
 		require.Nil(t, cl.unsafePayloads.Peek(), "pop because invalid")
+	})
+
+	t.Run("publish attributes", func(t *testing.T) {
+		logger := testlog.Logger(t, log.LevelError)
+		eng := &fakeEngine{
+			unsafe:    refA0,
+			safe:      refA0,
+			finalized: refA0,
+		}
+
+		attrBuilderA1 := &fakeAttributesBuilder{
+			attrs: attrA1,
+		}
+
+		cl := NewCLSync(logger, cfg, metrics, eng, fakeNetwork, fakeL1, attrBuilderA1, true)
+
+		require.ErrorIs(t, cl.Proceed(context.Background()), io.EOF, "nothing to process yet")
+		require.Nil(t, cl.unsafePayloads.Peek(), "no payloads yet")
+
+		cl.AddUnsafePayload(payloadA1)
+		lowest := cl.LowestQueuedUnsafeBlock()
+		require.Equal(t, refA1, lowest, "expecting A1 next")
+		require.NoError(t, cl.Proceed(context.Background()))
+		require.NotNil(t, fakeNetwork.lastAttrs)
+		require.Equal(t, refA1, fakeNetwork.lastAttrs.Parent, "published A1")
+		require.Nil(t, cl.unsafePayloads.Peek(), "pop because applied")
+		require.Equal(t, refA1, eng.unsafe, "new unsafe head")
 	})
 }
