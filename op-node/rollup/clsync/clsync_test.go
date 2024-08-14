@@ -433,4 +433,31 @@ func TestCLSync(t *testing.T) {
 		require.Nil(t, cl.unsafePayloads.Peek(), "pop because applied")
 		require.Equal(t, refA1, eng.unsafe, "new unsafe head")
 	})
+
+	t.Run("publish attributes", func(t *testing.T) {
+		logger := testlog.Logger(t, log.LevelError)
+		eng := &fakeEngine{
+			unsafe:    refA0,
+			safe:      refA0,
+			finalized: refA0,
+		}
+
+		attrBuilderA1 := &fakeAttributesBuilder{
+			attrs: attrA1,
+		}
+
+		cl := NewCLSync(logger, cfg, metrics, eng, fakeNetwork, fakeL1, attrBuilderA1, true)
+
+		require.ErrorIs(t, cl.Proceed(context.Background()), io.EOF, "nothing to process yet")
+		require.Nil(t, cl.unsafePayloads.Peek(), "no payloads yet")
+
+		cl.AddUnsafePayload(payloadA1)
+		lowest := cl.LowestQueuedUnsafeBlock()
+		require.Equal(t, refA1, lowest, "expecting A1 next")
+		require.NoError(t, cl.Proceed(context.Background()))
+		require.NotNil(t, fakeNetwork.lastAttrs)
+		require.Equal(t, refA1, fakeNetwork.lastAttrs.Parent, "published A1")
+		require.Nil(t, cl.unsafePayloads.Peek(), "pop because applied")
+		require.Equal(t, refA1, eng.unsafe, "new unsafe head")
+	})
 }

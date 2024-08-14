@@ -211,3 +211,31 @@ func (eq *CLSync) PublishAttributes(ctx context.Context, l2head eth.L2BlockRef) 
 
 	return nil
 }
+
+func (eq *CLSync) PublishAttributes(ctx context.Context, l2head eth.L2BlockRef) error {
+	l1Origin, err := eq.l1OriginSelector.FindL1Origin(ctx, l2head)
+	if err != nil {
+		return fmt.Errorf("error finding next L1 Origin: %w", err)
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
+	defer cancel()
+
+	attrs, err := eq.attrBuilder.PreparePayloadAttributes(fetchCtx, l2head, l1Origin.ID())
+	if err != nil {
+		return fmt.Errorf("error preparing payload attributes: %w", err)
+	}
+
+	withParent := &derive.AttributesWithParent{
+		Attributes:   attrs,
+		Parent:       l2head,
+		IsLastInSpan: false,
+	}
+
+	err = eq.n.PublishL2Attributes(ctx, withParent)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

@@ -76,6 +76,44 @@ type BuilderPayloadAttributes struct {
 	NoTxPool              bool               `json:"noTxPool,omitempty"`
 }
 
+func (a *AttributesWithParent) ToBuilderPayloadAttributes() (*BuilderPayloadAttributes, error) {
+	transactions := make([]*types.Transaction, len(a.Attributes.Transactions))
+	for i, txBytes := range a.Attributes.Transactions {
+		var ttx types.Transaction
+		err := ttx.UnmarshalBinary(txBytes)
+		if err != nil {
+			return nil, err
+		}
+		transactions[i] = &ttx
+	}
+
+	return &BuilderPayloadAttributes{
+		Timestamp:             a.Attributes.Timestamp,
+		Random:                common.HexToHash(a.Attributes.PrevRandao.String()),
+		SuggestedFeeRecipient: a.Attributes.SuggestedFeeRecipient,
+		Slot:                  a.Parent.Number + 1,
+		HeadHash:              a.Parent.Hash,
+		Withdrawals:           *a.Attributes.Withdrawals,
+		ParentBeaconBlockRoot: a.Attributes.ParentBeaconBlockRoot,
+		Transactions:          transactions,
+		GasLimit:              uint64(*a.Attributes.GasLimit),
+		NoTxPool:              a.Attributes.NoTxPool,
+	}, nil
+}
+
+type BuilderPayloadAttributes struct {
+	Timestamp             hexutil.Uint64     `json:"timestamp"`
+	Random                common.Hash        `json:"prevRandao"`
+	SuggestedFeeRecipient common.Address     `json:"suggestedFeeRecipient,omitempty"`
+	Slot                  uint64             `json:"slot"`
+	HeadHash              common.Hash        `json:"blockHash"`
+	Withdrawals           types.Withdrawals  `json:"withdrawals"`
+	ParentBeaconBlockRoot *common.Hash       `json:"parentBeaconBlockRoot"`
+	Transactions          types.Transactions `json:"transactions"`
+	GasLimit              uint64             `json:"gasLimit"`
+	NoTxPool              bool               `json:"noTxPool,omitempty"`
+}
+
 type AttributesQueue struct {
 	log          log.Logger
 	config       *rollup.Config

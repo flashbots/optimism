@@ -512,6 +512,35 @@ func (d *Driver) PublishL2Attributes(ctx context.Context, l2head eth.L2BlockRef)
 	return nil
 }
 
+func (d *Driver) PublishL2Attributes(ctx context.Context, l2head eth.L2BlockRef) error {
+	l1Origin, err := d.l1OriginSelector.FindL1Origin(ctx, l2head)
+	if err != nil {
+		d.log.Error("Error finding next L1 Origin", "err", err)
+		return err
+	}
+
+	fetchCtx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
+	defer cancel()
+
+	attrs, err := d.attrBuilder.PreparePayloadAttributes(fetchCtx, l2head, l1Origin.ID())
+	if err != nil {
+		d.log.Error("Error preparing payload attributes", "err", err)
+		return err
+	}
+
+	withParent := &derive.AttributesWithParent{
+		Attributes:   attrs,
+		Parent:       l2head,
+		IsLastInSpan: false,
+	}
+	err = d.network.PublishL2Attributes(ctx, withParent)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ResetDerivationPipeline forces a reset of the derivation pipeline.
 // It waits for the reset to occur. It simply unblocks the caller rather
 // than fully cancelling the reset request upon a context cancellation.
