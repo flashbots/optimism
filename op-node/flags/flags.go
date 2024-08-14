@@ -433,6 +433,8 @@ var optionalFlags = []cli.Flag{
 	SyncModeFlag,
 	RPCListenAddr,
 	RPCListenPort,
+	EventStreamListenAddr,
+	EventStreamListenPort,
 	L1TrustRPC,
 	L1RPCProviderKind,
 	L1RPCRateLimit,
