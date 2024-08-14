@@ -107,7 +107,10 @@ services:
       - l1-bn
       - l1-vc
       - l2
-    image: jinmel/op-node:pbs
+    build:
+      context: ../
+      dockerfile: ops/docker/op-stack-go/Dockerfile
+      target: op-node-target
     command: >
       op-node
       --l1=ws://l1:8546
