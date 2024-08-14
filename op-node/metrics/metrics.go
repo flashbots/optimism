@@ -160,8 +160,8 @@ type Metrics struct {
 
 	L1ReorgDepth prometheus.Histogram
 
-	TransactionsSequencedTotal prometheus.Counter
-	TransactionsSequenced      *prometheus.CounterVec
+	TransactionsSequencedTotal       prometheus.Counter
+	TransactionsSequencedSourceTotal *prometheus.CounterVec
 
 	PlasmaMetrics plasma.Metricer
 
@@ -294,9 +294,9 @@ func NewMetrics(procName string) *Metrics {
 			Name:      "transactions_sequenced_total",
 			Help:      "Count of total transactions sequenced",
 		}),
-		TransactionsSequenced: factory.NewCounterVec(prometheus.CounterOpts{
+		TransactionsSequencedSourceTotal: factory.NewCounterVec(prometheus.CounterOpts{
 			Namespace: ns,
-			Name:      "transactions_sequenced",
+			Name:      "transactions_sequenced_source_total",
 			Help:      "Count of transactions sequenced by sources",
 		}, []string{
 			"source",
@@ -607,7 +607,7 @@ func (m *Metrics) CountSequencedTxs(count int) {
 }
 
 func (m *Metrics) CountSequencedTxsBySource(count int, source string) {
-	m.TransactionsSequenced.WithLabelValues(source).Add(float64(count))
+	m.TransactionsSequencedSourceTotal.WithLabelValues(source).Add(float64(count))
 }
 
 func (m *Metrics) RecordL1ReorgDepth(d uint64) {
