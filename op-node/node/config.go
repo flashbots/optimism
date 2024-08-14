@@ -77,10 +77,9 @@ type Config struct {
 	ConductorRpcTimeout time.Duration
 
 	// Builder is used to get payloads from external block builder.
-	BuilderEnabled     bool
-	BuilderEndpoint    string
-	BuilderTimeout     time.Duration
-	BuilderBoostFactor uint64
+	BuilderEnabled  bool
+	BuilderEndpoint string
+	BuilderTimeout  time.Duration
 
 	// Plasma DA config
 	Plasma plasma.CLIConfig
