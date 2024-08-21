@@ -88,6 +88,7 @@ type Metricer interface {
 	RecordBuilderRequestTime(duration time.Duration)
 	RecordBuilderRequestFail()
 	RecordBuilderRequestTimeout()
+	RecordBuilderPayloadBytes(num int)
 	RecordSequencerProfit(profit float64, source PayloadSource)
 	RecordSequencerPayloadInserted(source PayloadSource)
 	RecordPayloadGas(gas float64, source string)
@@ -146,6 +147,7 @@ type Metrics struct {
 	SequencerBuilderRequestTotal           prometheus.Counter
 	SequencerBuilderRequestErrors          prometheus.Counter
 	SequencerBuilderRequestTimeouts        prometheus.Counter
+	SequencerBuilderPayloadBytes           prometheus.Gauge
 
 	SequencerProfit *prometheus.GaugeVec
 
@@ -464,6 +466,11 @@ func NewMetrics(procName string) *Metrics {
 			Name:      "sequencer_builder_request_timeout",
 			Help:      "Number of sequencer builder request timeouts",
 		}),
+		SequencerBuilderPayloadBytes: factory.NewGauge(prometheus.GaugeOpts{
+			Namespace: ns,
+			Name:      "sequencer_builder_payload_bytes",
+			Help:      "Size of sequencer builder payloads by source",
+		}),
 		SequencerProfit: factory.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: ns,
 			Name:      "sequencer_profit",
@@ -693,6 +700,10 @@ func (m *Metrics) RecordBuilderRequestTimeout() {
 	m.SequencerBuilderRequestTimeouts.Inc()
 }
 
+func (m *Metrics) RecordBuilderPayloadBytes(num int) {
+	m.SequencerBuilderPayloadBytes.Add(float64(num))
+}
+
 // RecordSequencerProfit measures the profit made by the sequencer by source: engine and external builders.
 func (m *Metrics) RecordSequencerProfit(profit float64, source PayloadSource) {
 	m.SequencerProfit.WithLabelValues(string(source)).Set(profit)
@@ -891,6 +902,9 @@ func (n *noopMetricer) RecordBuilderRequestFail() {
 }
 
 func (n *noopMetricer) RecordBuilderRequestTimeout() {
+}
+
+func (n *noopMetricer) RecordBuilderPayloadBytes(num int) {
 }
 
 func (n *noopMetricer) RecordSequencerProfit(profit float64, source PayloadSource) {
