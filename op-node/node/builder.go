@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"github.com/attestantio/go-eth2-client/spec/bellatrix"
 	"github.com/attestantio/go-eth2-client/spec/capella"
 	"github.com/attestantio/go-eth2-client/spec/deneb"
+	"github.com/attestantio/go-eth2-client/spec/phase0"
+	"github.com/flashbots/go-boost-utils/ssz"
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
@@ -25,6 +28,7 @@ import (
 )
 
 const PathGetPayload = "/eth/v1/builder/payload"
+const GenesisForkVersionMainnet = "0x00000000"
 
 type BuilderAPIConfig struct {
 	Timeout  time.Duration
@@ -32,10 +36,11 @@ type BuilderAPIConfig struct {
 }
 
 type BuilderAPIClient struct {
-	log        log.Logger
-	config     *BuilderAPIConfig
-	rollupCfg  *rollup.Config
-	httpClient *client.BasicHTTPClient
+	log           log.Logger
+	config        *BuilderAPIConfig
+	rollupCfg     *rollup.Config
+	httpClient    *client.BasicHTTPClient
+	domainBuilder phase0.Domain
 }
 
 type BuilderMetrics interface {
@@ -43,6 +48,11 @@ type BuilderMetrics interface {
 }
 
 func NewBuilderClient(log log.Logger, rollupCfg *rollup.Config, endpoint string, timeout time.Duration) *BuilderAPIClient {
+	domainBuilder, err := builder.ComputeDomain(ssz.DomainTypeAppBuilder, GenesisForkVersionMainnet, phase0.Root{}.String())
+	if err != nil {
+		log.Error("failed to compute domain", "error", err)
+	}
+
 	httpClient := client.NewBasicHTTPClient(endpoint, log)
 	config := &BuilderAPIConfig{
 		Timeout:  timeout,
@@ -50,10 +60,11 @@ func NewBuilderClient(log log.Logger, rollupCfg *rollup.Config, endpoint string,
 	}
 
 	return &BuilderAPIClient{
-		httpClient: httpClient,
-		config:     config,
-		rollupCfg:  rollupCfg,
-		log:        log,
+		httpClient:    httpClient,
+		config:        config,
+		rollupCfg:     rollupCfg,
+		log:           log,
+		domainBuilder: domainBuilder,
 	}
 }
 
@@ -105,10 +116,14 @@ func (s *BuilderAPIClient) GetPayload(ctx context.Context, ref eth.L2BlockRef, l
 		return nil, err
 	}
 
+	if err := verifySignature(submitBlockRequest, s.domainBuilder); err != nil {
+		return nil, err
+	}
+
 	// selects expected data version from the optimism version.
 	// Bedrock - Bellatrix
 	// Canyon - Capella
-	// Delta - Deneb
+	// Ecotone - Deneb
 	var expectedVersion spec.DataVersion
 	if s.rollupCfg.IsEcotone(ref.Time) {
 		expectedVersion = spec.DataVersionDeneb

@@ -13,6 +13,7 @@ require (
 	github.com/ethereum-optimism/go-ethereum-hdwallet v0.1.3
 	github.com/ethereum-optimism/superchain-registry/superchain v0.0.0-20240803025447-c92ef420eec2
 	github.com/ethereum/go-ethereum v1.13.15
+	github.com/flashbots/go-boost-utils v1.8.1
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb
 	github.com/google/go-cmp v0.6.0
@@ -56,7 +57,6 @@ require (
 	github.com/VictoriaMetrics/fastcache v1.12.1 // indirect
 	github.com/allegro/bigcache v1.2.1 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/attestantio/go-eth2-client v0.21.1 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
