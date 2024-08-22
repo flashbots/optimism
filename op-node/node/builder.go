@@ -281,3 +281,38 @@ func denebExecutionPayloadToExecutionPayload(payload *deneb.ExecutionPayload) *e
 	}
 	return envelope
 }
+
+func verifySignature(submission *builderSpec.VersionedSubmitBlockRequest, domainBuilder phase0.Domain) error {
+	bid, err := submission.BidTrace()
+	if err != nil {
+		return err
+	}
+
+	signature, err := submission.Signature()
+	if err != nil {
+		return err
+	}
+
+	builderPubKey := bid.BuilderPubkey
+
+	ok, err := ssz.VerifySignature(bid, domainBuilder, builderPubKey[:], signature[:])
+	if err != nil {
+		return err
+	}
+
+	if !ok {
+		return errors.New("invalid builder signature")
+	}
+	return nil
+}
+
+func computeDomain(domainType phase0.DomainType, forkVersionHex, genesisValidatorsRootHex string) (domain phase0.Domain, err error) {
+	genesisValidatorsRoot := phase0.Root(common.HexToHash(genesisValidatorsRootHex))
+	forkVersionBytes, err := hexutil.Decode(forkVersionHex)
+	if err != nil || len(forkVersionBytes) != 4 {
+		return domain, errors.New("invalid fork version")
+	}
+	var forkVersion [4]byte
+	copy(forkVersion[:], forkVersionBytes[:4])
+	return ssz.ComputeDomain(domainType, forkVersion, genesisValidatorsRoot), nil
+}
