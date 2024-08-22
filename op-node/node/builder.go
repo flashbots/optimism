@@ -19,10 +19,10 @@ import (
 	"github.com/holiman/uint256"
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
-	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -48,7 +48,7 @@ type BuilderMetrics interface {
 }
 
 func NewBuilderClient(log log.Logger, rollupCfg *rollup.Config, endpoint string, timeout time.Duration) *BuilderAPIClient {
-	domainBuilder, err := builder.ComputeDomain(ssz.DomainTypeAppBuilder, GenesisForkVersionMainnet, phase0.Root{}.String())
+	domainBuilder, err := computeDomain(ssz.DomainTypeAppBuilder, GenesisForkVersionMainnet, phase0.Root{}.String())
 	if err != nil {
 		log.Error("failed to compute domain", "error", err)
 	}
