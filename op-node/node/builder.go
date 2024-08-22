@@ -294,9 +294,7 @@ func verifySignature(submission *builderSpec.VersionedSubmitBlockRequest, domain
 		return err
 	}
 
-	builderPubKey := bid.BuilderPubkey
-
-	ok, err := ssz.VerifySignature(bid, domainBuilder, builderPubKey[:], signature[:])
+	ok, err := ssz.VerifySignature(bid, domainBuilder, bid.BuilderPubkey[:], signature[:])
 	if err != nil {
 		return err
 	}
