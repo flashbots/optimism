@@ -44,9 +44,11 @@ type BuilderAPIClient struct {
 	domainBuilder phase0.Domain
 }
 
-type BuilderMetrics interface {
-	RecordBuilderPayloadBytes(num int)
-}
+func NewBuilderClient(log log.Logger, rollupCfg *rollup.Config, endpoint string, timeout time.Duration) (*BuilderAPIClient, error) {
+	domainBuilder, err := computeDomain(ssz.DomainTypeAppBuilder, GenesisForkVersionMainnet, phase0.Root{}.String())
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute domain: %w", err)
+	}
 
 func NewBuilderClient(log log.Logger, rollupCfg *rollup.Config, endpoint string, timeout time.Duration) *BuilderAPIClient {
 	domainBuilder, err := computeDomain(ssz.DomainTypeAppBuilder, GenesisForkVersionMainnet, phase0.Root{}.String())
