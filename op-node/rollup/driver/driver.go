@@ -2,10 +2,12 @@ package driver
 
 import (
 	"context"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/ethereum-optimism/optimism/op-node/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/async"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/attributes"
@@ -52,6 +54,15 @@ type Metrics interface {
 
 	RecordL1ReorgDepth(d uint64)
 
+	CountSequencedTxsBySource(count int, source string)
+	RecordBuilderRequestTime(duration time.Duration)
+	RecordBuilderRequestFail()
+	RecordBuilderRequestTimeout()
+	RecordBuilderPayloadBytes(num int)
+	RecordSequencerProfit(profit float64, source metrics.PayloadSource)
+	RecordSequencerPayloadInserted(source metrics.PayloadSource)
+	RecordPayloadGas(gas float64, source string)
+
 	engine.Metrics
 	L1FetcherMetrics
 	event.Metrics
@@ -84,6 +95,10 @@ type EngineController interface {
 	InsertUnsafePayload(ctx context.Context, payload *eth.ExecutionPayloadEnvelope, ref eth.L2BlockRef) error
 	TryUpdateEngine(ctx context.Context) error
 	TryBackupUnsafeReorg(ctx context.Context) (bool, error)
+}
+
+type L1OriginSelector interface {
+	FindL1Origin(ctx context.Context, l2Head eth.L2BlockRef) (eth.L1BlockRef, error)
 }
 
 type CLSync interface {
@@ -194,12 +209,16 @@ func NewDriver(
 	verifConfDepth := confdepth.NewConfDepth(driverCfg.VerifierConfDepth, statusTracker.L1Head, l1)
 
 	ec := engine.NewEngineController(l2, log, metrics, cfg, syncCfg,
-		sys.Register("engine-controller", nil, opts))
+		sys.Register("engine-controller", nil, opts), builder)
 
 	sys.Register("engine-reset",
 		engine.NewEngineResetDeriver(driverCtx, log, cfg, l1, l2, syncCfg), opts)
 
-	clSync := clsync.NewCLSync(log, cfg, metrics) // alt-sync still uses cl-sync state to determine what to sync to
+	attrBuilder := derive.NewFetchingAttributesBuilder(cfg, l1, l2)
+	sequencerConfDepth := confdepth.NewConfDepth(driverCfg.SequencerConfDepth, statusTracker.L1Head, l1)
+	findL1Origin := sequencing.NewL1OriginSelector(log, cfg, sequencerConfDepth)
+
+	clSync := clsync.NewCLSync(log, cfg, metrics, network, findL1Origin, attrBuilder, driverCfg.SequencerPublishAttributes) // alt-sync still uses cl-sync state to determine what to sync to
 	sys.Register("cl-sync", clSync, opts)
 
 	var finalizer Finalizer
@@ -241,9 +260,6 @@ func NewDriver(
 	var sequencer sequencing.SequencerIface
 	if driverCfg.SequencerEnabled {
 		asyncGossiper := async.NewAsyncGossiper(driverCtx, network, log, metrics)
-		attrBuilder := derive.NewFetchingAttributesBuilder(cfg, l1, l2)
-		sequencerConfDepth := confdepth.NewConfDepth(driverCfg.SequencerConfDepth, statusTracker.L1Head, l1)
-		findL1Origin := sequencing.NewL1OriginSelector(log, cfg, sequencerConfDepth)
 		sequencer = sequencing.NewSequencer(driverCtx, log, cfg, attrBuilder, findL1Origin,
 			sequencerStateListener, sequencerConductor, asyncGossiper, metrics)
 		sys.Register("sequencer", sequencer, opts)

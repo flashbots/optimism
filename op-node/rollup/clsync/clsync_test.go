@@ -1,6 +1,7 @@
 package clsync
 
 import (
+	"context"
 	"errors"
 	"math/big"
 	"math/rand" // nosemgrep
@@ -20,6 +21,45 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum-optimism/optimism/op-service/testutils"
 )
+
+type fakeNetwork struct {
+	lastAttrs *derive.AttributesWithParent
+}
+
+func (f *fakeNetwork) PublishL2Attributes(ctx context.Context, attrs *derive.AttributesWithParent) error {
+	f.lastAttrs = attrs
+	return nil
+}
+
+var _ Network = (*fakeNetwork)(nil)
+
+type fakeL1OriginSelector struct {
+	hash       common.Hash
+	number     uint64
+	parentHash common.Hash
+	time       uint64
+}
+
+func (f *fakeL1OriginSelector) FindL1Origin(ctx context.Context, l2Head eth.L2BlockRef) (eth.L1BlockRef, error) {
+	return eth.L1BlockRef{
+		Hash:       f.hash,
+		Number:     f.number,
+		ParentHash: f.parentHash,
+		Time:       f.time,
+	}, nil
+}
+
+var _ L1OriginSelector = (*fakeL1OriginSelector)(nil)
+
+type fakeAttributesBuilder struct {
+	attrs *eth.PayloadAttributes
+}
+
+func (f *fakeAttributesBuilder) PreparePayloadAttributes(ctx context.Context, l2Parent eth.L2BlockRef, epoch eth.BlockID) (attrs *eth.PayloadAttributes, err error) {
+	return f.attrs, nil
+}
+
+var _ derive.AttributesBuilder = (*fakeAttributesBuilder)(nil)
 
 func TestCLSync(t *testing.T) {
 	rng := rand.New(rand.NewSource(1234))
@@ -152,7 +192,7 @@ func TestCLSync(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 
 		emitter.ExpectOnce(engine.ForkchoiceRequestEvent{})
@@ -174,7 +214,7 @@ func TestCLSync(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 
 		emitter.ExpectOnce(engine.ForkchoiceRequestEvent{})
@@ -197,7 +237,7 @@ func TestCLSync(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 
 		emitter.ExpectOnce(engine.ForkchoiceRequestEvent{})
@@ -218,7 +258,7 @@ func TestCLSync(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 
 		emitter.ExpectOnce(engine.ForkchoiceRequestEvent{})
@@ -239,7 +279,7 @@ func TestCLSync(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 		emitter.AssertExpectations(t) // nothing to process yet
 
@@ -298,7 +338,7 @@ func TestCLSync(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 
 		emitter.ExpectOnce(engine.ForkchoiceRequestEvent{})
@@ -343,7 +383,7 @@ func TestCLSync(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 
 		emitter.ExpectOnce(engine.ForkchoiceRequestEvent{})
@@ -384,7 +424,7 @@ func TestCLSync(t *testing.T) {
 	t.Run("invalid payload error", func(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
 		emitter := &testutils.MockEmitter{}
-		cl := NewCLSync(logger, cfg, metrics)
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, fakeAttrBuilder, false)
 		cl.AttachEmitter(emitter)
 
 		// CLSync gets payload and requests engine state, to later determine if payload should be forwarded
@@ -409,55 +449,40 @@ func TestCLSync(t *testing.T) {
 
 	t.Run("publish attributes", func(t *testing.T) {
 		logger := testlog.Logger(t, log.LevelError)
-		eng := &fakeEngine{
-			unsafe:    refA0,
-			safe:      refA0,
-			finalized: refA0,
-		}
 
 		attrBuilderA1 := &fakeAttributesBuilder{
 			attrs: attrA1,
 		}
+		emitter := &testutils.MockEmitter{}
+		cl := NewCLSync(logger, cfg, metrics, fakeNetwork, fakeL1, attrBuilderA1, true)
+		cl.AttachEmitter(emitter)
 
-		cl := NewCLSync(logger, cfg, metrics, eng, fakeNetwork, fakeL1, attrBuilderA1, true)
+		// CLSync gets payload and requests engine state, to later determine if payload should be forwarded
+		emitter.ExpectOnce(engine.ForkchoiceRequestEvent{})
+		cl.OnEvent(ReceivedUnsafePayloadEvent{Envelope: payloadA1})
+		emitter.AssertExpectations(t)
 
-		require.ErrorIs(t, cl.Proceed(context.Background()), io.EOF, "nothing to process yet")
-		require.Nil(t, cl.unsafePayloads.Peek(), "no payloads yet")
+		// Engine signals, CLSync sends the payload
+		emitter.ExpectOnce(engine.ProcessUnsafePayloadEvent{Envelope: payloadA1})
+		cl.OnEvent(engine.ForkchoiceUpdateEvent{
+			UnsafeL2Head:    refA0,
+			SafeL2Head:      refA0,
+			FinalizedL2Head: refA0,
+		})
+		emitter.AssertExpectations(t)
 
-		cl.AddUnsafePayload(payloadA1)
 		lowest := cl.LowestQueuedUnsafeBlock()
 		require.Equal(t, refA1, lowest, "expecting A1 next")
-		require.NoError(t, cl.Proceed(context.Background()))
+
+		// Now confirm we got the payload this time
+		cl.OnEvent(engine.ForkchoiceUpdateEvent{
+			UnsafeL2Head:    refA1,
+			SafeL2Head:      refA0,
+			FinalizedL2Head: refA0,
+		})
+
 		require.NotNil(t, fakeNetwork.lastAttrs)
 		require.Equal(t, refA1, fakeNetwork.lastAttrs.Parent, "published A1")
 		require.Nil(t, cl.unsafePayloads.Peek(), "pop because applied")
-		require.Equal(t, refA1, eng.unsafe, "new unsafe head")
-	})
-
-	t.Run("publish attributes", func(t *testing.T) {
-		logger := testlog.Logger(t, log.LevelError)
-		eng := &fakeEngine{
-			unsafe:    refA0,
-			safe:      refA0,
-			finalized: refA0,
-		}
-
-		attrBuilderA1 := &fakeAttributesBuilder{
-			attrs: attrA1,
-		}
-
-		cl := NewCLSync(logger, cfg, metrics, eng, fakeNetwork, fakeL1, attrBuilderA1, true)
-
-		require.ErrorIs(t, cl.Proceed(context.Background()), io.EOF, "nothing to process yet")
-		require.Nil(t, cl.unsafePayloads.Peek(), "no payloads yet")
-
-		cl.AddUnsafePayload(payloadA1)
-		lowest := cl.LowestQueuedUnsafeBlock()
-		require.Equal(t, refA1, lowest, "expecting A1 next")
-		require.NoError(t, cl.Proceed(context.Background()))
-		require.NotNil(t, fakeNetwork.lastAttrs)
-		require.Equal(t, refA1, fakeNetwork.lastAttrs.Parent, "published A1")
-		require.Nil(t, cl.unsafePayloads.Peek(), "pop because applied")
-		require.Equal(t, refA1, eng.unsafe, "new unsafe head")
 	})
 }

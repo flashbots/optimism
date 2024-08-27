@@ -28,6 +28,7 @@ const (
 	P2PCategory        = "5. PEER-TO-PEER"
 	AltDACategory      = "6. ALT-DA (EXPERIMENTAL)"
 	MiscCategory       = "7. MISC"
+	BuilderCategory    = "8. BUILDER"
 )
 
 func init() {

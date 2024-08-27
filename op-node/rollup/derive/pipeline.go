@@ -25,6 +25,14 @@ type Metrics interface {
 	RecordDerivedBatches(batchType string)
 	SetDerivationIdle(idle bool)
 	RecordPipelineReset()
+	CountSequencedTxsBySource(count int, source string)
+	RecordBuilderRequestTime(duration time.Duration)
+	RecordBuilderRequestFail()
+	RecordBuilderRequestTimeout()
+	RecordBuilderPayloadBytes(num int)
+	RecordSequencerProfit(profit float64, source metrics.PayloadSource)
+	RecordSequencerPayloadInserted(source metrics.PayloadSource)
+	RecordPayloadGas(gas float64, source string)
 }
 
 type L1Fetcher interface {

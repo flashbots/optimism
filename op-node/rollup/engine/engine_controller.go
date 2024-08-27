@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/event"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
@@ -68,25 +69,28 @@ type EngineController struct {
 	// because engine may forgot backupUnsafeHead or backupUnsafeHead is not part
 	// of the chain.
 	needFCUCallForBackupUnsafeReorg bool
+
+	payloadBuilder builder.PayloadBuilder
 }
 
 func NewEngineController(engine ExecEngine, log log.Logger, metrics derive.Metrics,
-	rollupCfg *rollup.Config, syncCfg *sync.Config, emitter event.Emitter) *EngineController {
+	rollupCfg *rollup.Config, syncCfg *sync.Config, emitter event.Emitter, payloadBuilder builder.PayloadBuilder) *EngineController {
 	syncStatus := syncStatusCL
 	if syncCfg.SyncMode == sync.ELSync {
 		syncStatus = syncStatusWillStartEL
 	}
 
 	return &EngineController{
-		engine:     engine,
-		log:        log,
-		metrics:    metrics,
-		chainSpec:  rollup.NewChainSpec(rollupCfg),
-		rollupCfg:  rollupCfg,
-		syncCfg:    syncCfg,
-		syncStatus: syncStatus,
-		clock:      clock.SystemClock,
-		emitter:    emitter,
+		engine:         engine,
+		log:            log,
+		metrics:        metrics,
+		chainSpec:      rollup.NewChainSpec(rollupCfg),
+		rollupCfg:      rollupCfg,
+		syncCfg:        syncCfg,
+		syncStatus:     syncStatus,
+		clock:          clock.SystemClock,
+		emitter:        emitter,
+		payloadBuilder: payloadBuilder,
 	}
 }
 

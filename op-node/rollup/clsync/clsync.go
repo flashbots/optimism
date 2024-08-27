@@ -1,7 +1,10 @@
 package clsync
 
 import (
+	"context"
+	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -19,6 +22,14 @@ type Metrics interface {
 	RecordUnsafePayloadsBuffer(length uint64, memSize uint64, next eth.BlockID)
 }
 
+type Network interface {
+	PublishL2Attributes(ctx context.Context, attrs *derive.AttributesWithParent) error
+}
+
+type L1OriginSelector interface {
+	FindL1Origin(ctx context.Context, l2Head eth.L2BlockRef) (eth.L1BlockRef, error)
+}
+
 // CLSync holds on to a queue of received unsafe payloads,
 // and tries to apply them to the tip of the chain when requested to.
 type CLSync struct {
@@ -31,14 +42,25 @@ type CLSync struct {
 	mu sync.Mutex
 
 	unsafePayloads *PayloadsQueue // queue of unsafe payloads, ordered by ascending block number, may have gaps and duplicates
+
+	n                 Network
+	l1OriginSelector  L1OriginSelector
+	attrBuilder       derive.AttributesBuilder
+	spec              *rollup.ChainSpec
+	publishAttributes bool
 }
 
-func NewCLSync(log log.Logger, cfg *rollup.Config, metrics Metrics) *CLSync {
+func NewCLSync(log log.Logger, cfg *rollup.Config, metrics Metrics, n Network, l1Origin L1OriginSelector, attrBuilder derive.AttributesBuilder, publishAttributes bool) *CLSync {
 	return &CLSync{
-		log:            log,
-		cfg:            cfg,
-		metrics:        metrics,
-		unsafePayloads: NewPayloadsQueue(log, maxUnsafePayloadsMemory, payloadMemSize),
+		log:               log,
+		cfg:               cfg,
+		spec:              rollup.NewChainSpec(cfg),
+		metrics:           metrics,
+		unsafePayloads:    NewPayloadsQueue(log, maxUnsafePayloadsMemory, payloadMemSize),
+		n:                 n,
+		l1OriginSelector:  l1Origin,
+		attrBuilder:       attrBuilder,
+		publishAttributes: publishAttributes,
 	}
 }
 
@@ -176,6 +198,13 @@ func (eq *CLSync) onUnsafePayload(x ReceivedUnsafePayloadEvent) {
 		eq.log.Warn("Could not add unsafe payload", "id", envelope.ExecutionPayload.ID(), "timestamp", uint64(envelope.ExecutionPayload.Timestamp), "err", err)
 		return
 	}
+
+	if eq.publishAttributes {
+		if err := eq.PublishAttributes(x.Envelope); err != nil {
+			eq.log.Warn("Error publishing L2 attributes", "id", envelope.ExecutionPayload.ID(), "err", err)
+		}
+	}
+
 	p := eq.unsafePayloads.Peek()
 	eq.metrics.RecordUnsafePayloadsBuffer(uint64(eq.unsafePayloads.Len()), eq.unsafePayloads.MemSize(), p.ExecutionPayload.ID())
 	eq.log.Trace("Next unsafe payload to process", "next", p.ExecutionPayload.ID(), "timestamp", uint64(p.ExecutionPayload.Timestamp))
@@ -184,57 +213,12 @@ func (eq *CLSync) onUnsafePayload(x ReceivedUnsafePayloadEvent) {
 	eq.emitter.Emit(engine.ForkchoiceRequestEvent{})
 }
 
-func (eq *CLSync) PublishAttributes(ctx context.Context, l2head eth.L2BlockRef) error {
-	l1Origin, err := eq.l1OriginSelector.FindL1Origin(ctx, l2head)
+func (eq *CLSync) PublishAttributes(envelope *eth.ExecutionPayloadEnvelope) error {
+	ctx := context.Background()
+	l2head, err := derive.PayloadToBlockRef(eq.cfg, envelope.ExecutionPayload)
 	if err != nil {
-		return fmt.Errorf("error finding next L1 Origin: %w", err)
+		return fmt.Errorf("failed to turn execution payload into a block ref: %w", err)
 	}
-
-	fetchCtx, cancel := context.WithTimeout(ctx, time.Millisecond*500)
-	defer cancel()
-
-	attrs, err := eq.attrBuilder.PreparePayloadAttributes(fetchCtx, l2head, l1Origin.ID())
-	if err != nil {
-		return fmt.Errorf("error preparing payload attributes: %w", err)
-	}
-
-	// If our next L2 block timestamp is beyond the Sequencer drift threshold, then we must produce
-	// empty blocks (other than the L1 info deposit and any user deposits). We handle this by
-	// setting NoTxPool to true, which will cause the Sequencer to not include any transactions
-	// from the transaction pool.
-	attrs.NoTxPool = uint64(attrs.Timestamp) > l1Origin.Time+eq.spec.MaxSequencerDrift(l1Origin.Time)
-
-	// For the Ecotone activation block we shouldn't include any sequencer transactions.
-	if eq.cfg.IsEcotoneActivationBlock(uint64(attrs.Timestamp)) {
-		attrs.NoTxPool = true
-		eq.log.Info("Sequencing Ecotone upgrade block")
-	}
-
-	// For the Fjord activation block we shouldn't include any sequencer transactions.
-	if eq.cfg.IsFjordActivationBlock(uint64(attrs.Timestamp)) {
-		attrs.NoTxPool = true
-		eq.log.Info("Sequencing Fjord upgrade block")
-	}
-
-	eq.log.Debug("prepared attributes for new block",
-		"num", l2head.Number+1, "time", uint64(attrs.Timestamp),
-		"origin", l1Origin, "origin_time", l1Origin.Time, "noTxPool", attrs.NoTxPool)
-
-	withParent := &derive.AttributesWithParent{
-		Attributes:   attrs,
-		Parent:       l2head,
-		IsLastInSpan: false,
-	}
-
-	err = eq.n.PublishL2Attributes(ctx, withParent)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (eq *CLSync) PublishAttributes(ctx context.Context, l2head eth.L2BlockRef) error {
 	l1Origin, err := eq.l1OriginSelector.FindL1Origin(ctx, l2head)
 	if err != nil {
 		return fmt.Errorf("error finding next L1 Origin: %w", err)

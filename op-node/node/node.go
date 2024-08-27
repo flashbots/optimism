@@ -14,6 +14,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/r3labs/sse"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/event"
@@ -24,7 +25,9 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/node/safedb"
 	"github.com/ethereum-optimism/optimism/op-node/p2p"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/conductor"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
 	"github.com/ethereum-optimism/optimism/op-node/version"
@@ -420,7 +423,7 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config) error {
 	} else {
 		n.safeDB = safedb.Disabled
 	}
-	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n.beacon, n, n, n.log, n.metrics, cfg.ConfigPersistence, n.safeDB, &cfg.Sync, sequencerConductor, plasmaDA)
+	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, payloadBuilder, n.beacon, n, n, n.log, n.metrics, cfg.ConfigPersistence, n.safeDB, &cfg.Sync, sequencerConductor, plasmaDA)
 	return nil
 }
 

@@ -4,6 +4,8 @@ go 1.21
 
 require (
 	github.com/andybalholm/brotli v1.1.0
+	github.com/attestantio/go-builder-client v0.4.2
+	github.com/attestantio/go-eth2-client v0.19.8
 	github.com/btcsuite/btcd v0.24.2
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/cockroachdb/pebble v0.0.0-20231018212520-f6cde3fc2fa4
@@ -41,6 +43,7 @@ require (
 	github.com/pkg/profile v1.7.0
 	github.com/prometheus/client_golang v1.19.1
 	github.com/protolambda/ctxlock v0.1.0
+	github.com/r3labs/sse v0.0.0-20210224172625-26fe804710bc
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.27.3
 	golang.org/x/crypto v0.25.0
@@ -100,6 +103,7 @@ require (
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
 	github.com/goccy/go-json v0.10.3 // indirect
+	github.com/goccy/go-yaml v1.11.2 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -196,7 +200,7 @@ require (
 	github.com/quic-go/webtransport-go v0.8.0 // indirect
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	github.com/rogpeppe/go-internal v1.10.0 // indirect
+	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	github.com/rs/cors v1.11.0 // indirect
 	github.com/rs/xid v1.5.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -222,7 +226,9 @@ require (
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/tools v0.23.0 // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
+	gopkg.in/cenkalti/backoff.v1 v1.1.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

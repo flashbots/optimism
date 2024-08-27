@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-node/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/engine"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/event"
@@ -40,7 +41,7 @@ func NewDriver(logger log.Logger, cfg *rollup.Config, l1Source derive.L1Fetcher,
 	pipelineDeriver := derive.NewPipelineDeriver(context.Background(), pipeline)
 	pipelineDeriver.AttachEmitter(d)
 
-	ec := engine.NewEngineController(l2Source, logger, metrics.NoopMetrics, cfg, &sync.Config{SyncMode: sync.CLSync}, d)
+	ec := engine.NewEngineController(l2Source, logger, metrics.NoopMetrics, cfg, &sync.Config{SyncMode: sync.CLSync}, d, &builder.NoOpBuilder{})
 	engineDeriv := engine.NewEngDeriver(logger, context.Background(), cfg, metrics.NoopMetrics, ec)
 	engineDeriv.AttachEmitter(d)
 	syncCfg := &sync.Config{SyncMode: sync.CLSync}

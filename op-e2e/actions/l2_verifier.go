@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/node"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/attributes"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/clsync"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
@@ -31,6 +32,13 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testutils"
 )
+
+// MockNetwork is a shim to override the network.
+type MockNetwork struct{}
+
+func (m *MockNetwork) PublishL2Attributes(ctx context.Context, attrs *derive.AttributesWithParent) error {
+	return nil
+}
 
 // L2Verifier is an actor that functions like a rollup node,
 // without the full P2P/API/Node stack, but just the derivation state, and simplified driver.
@@ -106,12 +114,13 @@ func NewL2Verifier(t Testing, log log.Logger, l1 derive.L1Fetcher, blobsSrc deri
 
 	metrics := &testutils.TestDerivationMetrics{}
 	ec := engine.NewEngineController(eng, log, metrics, cfg, syncCfg,
-		sys.Register("engine-controller", nil, opts))
+		sys.Register("engine-controller", nil, opts), &builder.NoOpBuilder{})
 
 	sys.Register("engine-reset",
 		engine.NewEngineResetDeriver(ctx, log, cfg, l1, eng, syncCfg), opts)
 
-	clSync := clsync.NewCLSync(log, cfg, metrics)
+	attrBuilder := derive.NewFetchingAttributesBuilder(cfg, l1, eng)
+	clSync := clsync.NewCLSync(log, cfg, metrics, &MockNetwork{}, &MockL1OriginSelector{}, attrBuilder, false)
 	sys.Register("cl-sync", clSync, opts)
 
 	var finalizer driver.Finalizer
