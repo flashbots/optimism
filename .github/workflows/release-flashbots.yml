@@ -63,6 +63,7 @@ jobs:
             GIT_COMMIT=${{ github.sha }}
             GIT_DATE=${{ github.event.head_commit.timestamp }}
             OP_NODE_VERSION=${{ env.RELEASE_VERSION }}
+            IMAGE_TAGS=${{ steps.meta.outputs.tags }}
 
   github-release:
     runs-on: ubuntu-latest
