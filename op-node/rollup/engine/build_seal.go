@@ -45,6 +45,7 @@ type BuildSealEvent struct {
 	IsLastInSpan bool
 	// payload is promoted to pending-safe if non-zero
 	DerivedFrom eth.L1BlockRef
+	L2head      eth.L2BlockRef
 }
 
 func (ev BuildSealEvent) String() string {
@@ -56,7 +57,8 @@ func (eq *EngDeriver) onBuildSeal(ev BuildSealEvent) {
 	defer cancel()
 
 	sealingStart := time.Now()
-	envelope, err := eq.ec.engine.GetPayload(ctx, ev.Info)
+	envelope, builderResult, err := getPayloadWithBuilderPayload(ctx, eq.log, eq.ec.engine, ev.Info, ev.L2head, eq.ec.payloadBuilder, eq.metrics)
+
 	if err != nil {
 		if x, ok := err.(eth.InputError); ok && x.Code == eth.UnknownPayload { //nolint:all
 			eq.log.Warn("Cannot seal block, payload ID is unknown",

@@ -4,9 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // isDepositTx checks an opaqueTx to determine if it is a Deposit Transaction
@@ -117,5 +120,62 @@ func startPayload(ctx context.Context, eng ExecEngine, fc eth.ForkchoiceState, a
 		return eth.PayloadID{}, BlockInsertTemporaryErr, ErrEngineSyncing
 	default:
 		return eth.PayloadID{}, BlockInsertTemporaryErr, eth.ForkchoiceUpdateErr(fcRes.PayloadStatus)
+	}
+}
+
+type PayloadRequestResult struct {
+	success  bool
+	envelope *eth.ExecutionPayloadEnvelope
+	error    error
+}
+
+func requestPayloadFromBuilder(ctx context.Context, builder builder.PayloadBuilder, l2head eth.L2BlockRef, log log.Logger, metrics Metrics, results chan<- *PayloadRequestResult) {
+	start := time.Now()
+	payload, err := builder.GetPayload(ctx, l2head, log, metrics)
+	metrics.RecordBuilderRequestTime(time.Since(start))
+	if err != nil {
+		results <- &PayloadRequestResult{success: false, error: err}
+		return
+	}
+	results <- &PayloadRequestResult{success: true, envelope: payload}
+}
+
+// makes parallel request to builder and engine to get the payload
+func getPayloadWithBuilderPayload(ctx context.Context, log log.Logger, eng ExecEngine, payloadInfo eth.PayloadInfo, l2head eth.L2BlockRef, builder builder.PayloadBuilder, metrics Metrics) (
+	*eth.ExecutionPayloadEnvelope, *PayloadRequestResult, error) {
+	// if builder is not enabled, return early with default path.
+	if !builder.Enabled() {
+		payload, err := eng.GetPayload(ctx, payloadInfo)
+		return payload, nil, err
+	}
+
+	log.Debug("requesting payload from builder", l2head.String(), "payloadInfo", payloadInfo)
+	ctxTimeout, cancel := context.WithTimeout(ctx, builder.Timeout())
+	defer cancel()
+
+	result := make(chan *PayloadRequestResult, 1)
+	go requestPayloadFromBuilder(ctxTimeout, builder, l2head, log, metrics, result)
+	envelope, err := eng.GetPayload(ctx, payloadInfo)
+	if err != nil {
+		log.Error("failed to get payload from engine", "error", err.Error())
+		return envelope, nil, err
+	}
+
+	// select the payload from builder if possible
+	select {
+	case <-ctxTimeout.Done():
+		metrics.RecordBuilderRequestTimeout()
+		log.Warn("builder request timed out", "error", ctxTimeout.Err())
+		return envelope, &PayloadRequestResult{success: false, error: ctxTimeout.Err()}, nil
+	case builderPayload := <-result:
+		if builderPayload.error != nil {
+			metrics.RecordBuilderRequestFail()
+			log.Warn("failed to get payload from builder", "error", builderPayload.error)
+			return envelope, builderPayload, nil
+		}
+		log.Info("received payload from builder", "hash", builderPayload.envelope.ExecutionPayload.BlockHash.String(), "number", uint64(builderPayload.envelope.ExecutionPayload.BlockNumber))
+		// TODO: ParentBeaconBlockRoot should have been delivered by the builder. Revisit when the builder API spec supports BeaconRoot.
+		builderPayload.envelope.ParentBeaconBlockRoot = envelope.ParentBeaconBlockRoot
+		return envelope, builderPayload, nil
 	}
 }

@@ -19,6 +19,11 @@ type Metrics interface {
 
 	RecordSequencerBuildingDiffTime(duration time.Duration)
 	RecordSequencerSealingTime(duration time.Duration)
+
+	RecordBuilderRequestTime(duration time.Duration)
+	RecordBuilderRequestTimeout()
+	RecordBuilderRequestFail()
+	RecordBuilderPayloadBytes(num int)
 }
 
 // ForkchoiceRequestEvent signals to the engine that it should emit an artificial
