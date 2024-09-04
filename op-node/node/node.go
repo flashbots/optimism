@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -401,7 +404,19 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 
 	var payloadBuilder builder.PayloadBuilder = &builder.NoOpBuilder{}
 	if cfg.BuilderEnabled {
-		payloadBuilder = NewBuilderClient(n.log, &cfg.Rollup, cfg.BuilderEndpoint, cfg.BuilderTimeout)
+		var signer *ecdsa.PrivateKey
+		if cfg.BuilderRequestSigner != "" {
+			signer, err = crypto.HexToECDSA(strings.TrimPrefix(cfg.BuilderRequestSigner, "0x"))
+			if err != nil {
+				return fmt.Errorf("invalid proposer signer: %w", err)
+			}
+		} else {
+			log.Warn("Proposer signer not provided, reuests to the builder will be unauthenticated")
+		}
+		payloadBuilder, err = NewBuilderClient(n.log, &cfg.Rollup, cfg.BuilderEndpoint, cfg.BuilderTimeout, signer)
+		if err != nil {
+			return fmt.Errorf("failed to create builder client: %w", err)
+		}
 	}
 
 	// if plasma is not explicitly activated in the node CLI, the config + any error will be ignored.
@@ -630,7 +645,7 @@ func (n *OpNode) PublishL2Attributes(ctx context.Context, attrs *derive.Attribut
 		n.log.Warn("failed to marshal payload attributes", "err", err)
 		return err
 	}
-	n.log.Info("Publishing execution payload attributes on event stream", "attrs", builderAttrs)
+	n.log.Info("Publishing execution payload attributes on event stream", "slot", builderAttrs.Slot)
 	n.httpEventStream.Publish("payload_attributes", &sse.Event{Data: jsonBytes})
 	return nil
 }

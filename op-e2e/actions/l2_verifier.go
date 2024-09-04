@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/node"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/attributes"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/clsync"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
@@ -71,9 +72,9 @@ type safeDB interface {
 
 func NewL2Verifier(t Testing, log log.Logger, l1 derive.L1Fetcher, blobsSrc derive.L1BlobsFetcher, plasmaSrc driver.PlasmaIface, eng L2API, cfg *rollup.Config, syncCfg *sync.Config, safeHeadListener safeDB) *L2Verifier {
 	metrics := &testutils.TestDerivationMetrics{}
-	engine := derive.NewEngineController(eng, log, metrics, cfg, syncCfg.SyncMode)
+	engine := derive.NewEngineController(eng, log, metrics, cfg, syncCfg.SyncMode, &builder.NoOpBuilder{})
 
-	clSync := clsync.NewCLSync(log, cfg, metrics, engine)
+	clSync := clsync.NewCLSync(log, cfg, metrics, engine, nil, nil, nil, false)
 
 	var finalizer driver.Finalizer
 	if cfg.PlasmaEnabled() {

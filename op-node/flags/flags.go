@@ -401,6 +401,13 @@ var (
 		Value:    time.Millisecond * 500,
 		Category: BuilderCategory,
 	}
+	BuilderRequestSignerFlag = &cli.StringFlag{
+		Name:     "l2.builder.request-signer",
+		Usage:    "Private key from proposer in hex format to sign get block payload requests to the builder.",
+		Required: false,
+		EnvVars:  prefixEnvVars("L2_BUILDER_SIGNER"),
+		Category: BuilderCategory,
+	}
 )
 
 var requiredFlags = []cli.Flag{
@@ -413,6 +420,7 @@ var optionalFlags = []cli.Flag{
 	BuilderEnabledFlag,
 	BuilderEndpointFlag,
 	BuilderRequestTimeoutFlag,
+	BuilderRequestSignerFlag,
 	BeaconAddr,
 	BeaconHeader,
 	BeaconFallbackAddrs,
