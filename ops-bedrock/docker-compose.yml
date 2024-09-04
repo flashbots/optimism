@@ -102,7 +102,8 @@ services:
       --plasma.da-service=${PLASMA_DA_SERVICE}
       --plasma.da-server=http://da-server:3100
       --l2.builder.enabled=true
-      --l2.builder.endpoint=http://builder-op-geth:28545
+      --l2.builder.endpoint=http://0xc64498FA4661Ac5Ecd8c9915E232f57eb020cA00@builder-op-geth:28545
+      --l2.builder.request-signer=8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba
     ports:
       - "7545:8545"
       - "9003:9003"
@@ -317,6 +318,7 @@ services:
     ports:
       - "5545:8545"
       - "6063:6060"
+      - "28545:28545"
     volumes:
       - "builder_data:/db"
       - "${PWD}/../.devnet/genesis-l2.json:/genesis.json"
@@ -336,10 +338,11 @@ services:
       - "--builder.beacon_endpoints=http://builder-op-node:9546"
       - "--builder.block_retry_interval=100ms"
       - "--builder.block_time=2s"
+      - "--builder.proposer_signing_address=0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"
+      - "--builder.signing_key=2fc12ae741f29701f8e30f5de6350766c020cb80768a0ff01e6838ffd2431e11"
       - "--metrics"
     environment:
       GETH_MINER_RECOMMIT: 100ms
-      BUILDER_TX_SIGNING_KEY: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
     networks:
       custom_net:
         ipv4_address: "10.5.0.201"

@@ -71,13 +71,16 @@ func (n *TestDerivationMetrics) RecordBuilderRequestFail() {
 func (n *TestDerivationMetrics) RecordBuilderRequestTimeout() {
 }
 
-func (n *TestDerivationMetrics) RecordSequencerProfit(profit float64, source string) {
+func (n *TestDerivationMetrics) RecordSequencerProfit(profit float64, source metrics.PayloadSource) {
 }
 
 func (n *TestDerivationMetrics) RecordSequencerPayloadInserted(source metrics.PayloadSource) {
 }
 
 func (n *TestDerivationMetrics) RecordPayloadGas(gas float64, source string) {
+}
+
+func (n *TestDerivationMetrics) RecordBuilderPayloadBytes(bytes int) {
 }
 
 type TestRPCMetrics struct{}

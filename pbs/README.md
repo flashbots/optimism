@@ -40,29 +40,31 @@ These are the configuration options to enable PBS for the devnet.
 
 There are three flags that configure the sequencer to request payloads from the builder API endpoint:
 
-| Flag                      | Description                                                         | Default Value |
-|---------------------------|---------------------------------------------------------------------|---------------|
-| `l2.builder.enabled`       | Enable the builder API request to get payloads built from the builder. | `false`       |
-| `l2.builder.endpoint`      | The URL of the builder API endpoint.                                | `""`          |
-| `l2.builder.timeout`       | The timeout for the builder API request.                            | `500ms`       |
+| Flag                       | Description                                                                | Default Value |
+|----------------------------|----------------------------------------------------------------------------|---------------|
+| `l2.builder.enabled`       | Enable the builder API request to get payloads built from the builder.     | `false`       |
+| `l2.builder.endpoint`      | The URL of the builder API endpoint.                                       | `""`          |
+| `l2.builder.timeout`       | The timeout for the builder API request.                                   | `500ms`       |
+| `l2.builder.request-signer`| The key of the proposer signing the builder requests for authentication.   | `""`          |
 
 ### builder-op-node
 
 The op-geth builder requires the op-node to publish the latest attributes as server-sent events in order to start building the payloads.
 
-| Flag                        | Description                                                                     | Default Value |
-|-----------------------------|---------------------------------------------------------------------------------|---------------|
-| `sequencer.publish-attributes` | Set to true to enable the sequencer to publish attributes to the event stream. | `false`       |
-| `eventstream.addr`          | The address of the eventstream server.                                           | `127.0.0.1`   |
-| `eventstream.port`          | The port of the eventstream server.                                              | `9546`        |
+| Flag                             | Description                                                                     | Default Value |
+|----------------------------------|---------------------------------------------------------------------------------|---------------|
+| `sequencer.publish-attributes`   | Set to true to enable the sequencer to publish attributes to the event stream   | `false`       |
+| `eventstream.addr`               | The address of the eventstream server                                           | `127.0.0.1`   |
+| `eventstream.port`               | The port of the eventstream server                                              | `9546`        |
 
 ### builder-op-geth
 
 These are the builder flags to enable the builder service in op-geth:
 
-| Flag                             | Description                                                                                  | Default Value |
-|----------------------------------|----------------------------------------------------------------------------------------------|---------------|
-| `builder`                        | Enable the builder service.                                                                  | `false`       |
-| `builder.beacon_endpoints`       | The op-node address to get the payload attributes from. Should be set to `builder-op-node`.  | `""`          |
-| `builder.block_retry_interval`   | The interval to retry building the payload.                                                  | `500ms`       |
-| `builder.block_time`             | Block time of the network.                                                                   | `2s`          |
+| Flag                              | Description                                                                                  | Default Value |
+|-----------------------------------|----------------------------------------------------------------------------------------------|---------------|
+| `builder`                         | Enable the builder service.                                                                  | `false`       |
+| `builder.beacon_endpoints`        | The op-node address to get the payload attributes from. Should be set to `builder-op-node`.  | `""`          |
+| `builder.block_retry_interval`    | The interval to retry building the payload.                                                  | `500ms`       |
+| `builder.block_time`              | Block time of the network.                                                                   | `2s`          |
+| `builder.proposer_signing_address`| The address of the proposer signing the builder requests.                                    | `""`          |
