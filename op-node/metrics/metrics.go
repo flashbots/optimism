@@ -128,17 +128,7 @@ type Metrics struct {
 	SequencerSealingDurationSeconds prometheus.Histogram
 	SequencerSealingTotal           prometheus.Counter
 
-	SequencerBuilderRequestDurationSeconds prometheus.Histogram
-	SequencerBuilderRequestTotal           prometheus.Counter
-	SequencerBuilderRequestErrors          prometheus.Counter
-	SequencerBuilderRequestTimeouts        prometheus.Counter
-	SequencerBuilderPayloadBytes           prometheus.Gauge
-
-	SequencerProfit *prometheus.GaugeVec
-
-	SequencerPayloadInserted *prometheus.CounterVec
-	SequencerPayloadGas      *prometheus.GaugeVec
-	SequencerPayloadGasTotal *prometheus.GaugeVec
+	BuilderMetrics *BuilderMetrics
 
 	UnsafePayloadsBufferLen     prometheus.Gauge
 	UnsafePayloadsBufferMemSize prometheus.Gauge
@@ -193,6 +183,8 @@ func NewMetrics(procName string) *Metrics {
 	registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	registry.MustRegister(collectors.NewGoCollector())
 	factory := metrics.With(registry)
+
+	builderMetrics := NewBuilderMetrics(ns, factory)
 
 	return &Metrics{
 		Info: factory.NewGaugeVec(prometheus.GaugeOpts{
@@ -403,61 +395,7 @@ func NewMetrics(procName string) *Metrics {
 			Help:      "Number of sequencer block sealing jobs",
 		}),
 
-		SequencerBuilderRequestDurationSeconds: factory.NewHistogram(prometheus.HistogramOpts{
-			Namespace: ns,
-			Name:      "sequencer_builder_request_seconds",
-			Buckets: []float64{
-				.001, .0025, .005, .01, .025, .05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
-			Help: "Duration of sequencer builder requests",
-		}),
-		SequencerBuilderRequestTotal: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: ns,
-			Name:      "sequencer_builder_request_total",
-			Help:      "Number of sequencer builder requests",
-		}),
-		SequencerBuilderRequestErrors: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: ns,
-			Name:      "sequencer_builder_request_errors",
-			Help:      "Number of sequencer builder request errors",
-		}),
-		SequencerBuilderRequestTimeouts: factory.NewCounter(prometheus.CounterOpts{
-			Namespace: ns,
-			Name:      "sequencer_builder_request_timeout",
-			Help:      "Number of sequencer builder request timeouts",
-		}),
-		SequencerBuilderPayloadBytes: factory.NewGauge(prometheus.GaugeOpts{
-			Namespace: ns,
-			Name:      "sequencer_builder_payload_bytes",
-			Help:      "Size of sequencer builder payloads by source",
-		}),
-		SequencerProfit: factory.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: ns,
-			Name:      "sequencer_profit",
-			Help:      "Sequencer profit by source.",
-		}, []string{
-			"source",
-		}),
-		SequencerPayloadInserted: factory.NewCounterVec(prometheus.CounterOpts{
-			Namespace: ns,
-			Name:      "sequencer_payload_inserted",
-			Help:      "Count of sequencer payloads inserted to engine by source",
-		}, []string{
-			"source",
-		}),
-		SequencerPayloadGas: factory.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: ns,
-			Name:      "sequencer_payload_gas",
-			Help:      "Gas used by sequencer payloads by source",
-		}, []string{
-			"source",
-		}),
-		SequencerPayloadGasTotal: factory.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: ns,
-			Name:      "sequencer_payload_gas_total",
-			Help:      "Total gas used by sequencer payloads by source",
-		}, []string{
-			"source",
-		}),
+		BuilderMetrics: builderMetrics,
 
 		ProtocolVersionDelta: factory.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: ns,
@@ -632,34 +570,32 @@ func (m *Metrics) RecordSequencerSealingTime(duration time.Duration) {
 }
 
 func (m *Metrics) RecordBuilderRequestTime(duration time.Duration) {
-	m.SequencerBuilderRequestTotal.Inc()
-	m.SequencerBuilderRequestDurationSeconds.Observe(float64(duration) / float64(time.Second))
+	m.BuilderMetrics.RecordBuilderRequestTime(duration)
 }
 
 func (m *Metrics) RecordBuilderRequestFail() {
-	m.SequencerBuilderRequestErrors.Inc()
+	m.BuilderMetrics.RecordBuilderRequestFail()
 }
 
 func (m *Metrics) RecordBuilderRequestTimeout() {
-	m.SequencerBuilderRequestTimeouts.Inc()
+	m.BuilderMetrics.RecordBuilderRequestTimeout()
 }
 
 func (m *Metrics) RecordBuilderPayloadBytes(num int) {
-	m.SequencerBuilderPayloadBytes.Add(float64(num))
+	m.BuilderMetrics.RecordBuilderPayloadBytes(num)
 }
 
 // RecordSequencerProfit measures the profit made by the sequencer by source: engine and external builders.
 func (m *Metrics) RecordSequencerProfit(profit float64, source PayloadSource) {
-	m.SequencerProfit.WithLabelValues(string(source)).Set(profit)
+	m.BuilderMetrics.RecordSequencerProfit(profit, source)
 }
 
 func (m *Metrics) RecordSequencerPayloadInserted(source PayloadSource) {
-	m.SequencerPayloadInserted.WithLabelValues(string(source)).Inc()
+	m.BuilderMetrics.RecordSequencerPayloadInserted(source)
 }
 
 func (m *Metrics) RecordPayloadGas(gas float64, source string) {
-	m.SequencerPayloadGas.WithLabelValues(source).Set(gas)
-	m.SequencerPayloadGasTotal.WithLabelValues(source).Add(gas)
+	m.BuilderMetrics.RecordPayloadGas(gas, source)
 }
 
 // StartServer starts the metrics server on the given hostname and port.
