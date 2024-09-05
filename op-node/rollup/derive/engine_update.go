@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/holiman/uint256"
 
 	opMetrics "github.com/ethereum-optimism/optimism/op-node/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/async"
@@ -126,70 +124,6 @@ type PayloadRequestResult struct {
 	error    error
 }
 
-func requestPayloadFromBuilder(ctx context.Context, builder builder.PayloadBuilder, l2head eth.L2BlockRef, log log.Logger, metrics Metrics, results chan<- *PayloadRequestResult) {
-	start := time.Now()
-	payload, err := builder.GetPayload(ctx, l2head, log, metrics)
-	metrics.RecordBuilderRequestTime(time.Since(start))
-	if err != nil {
-		results <- &PayloadRequestResult{success: false, error: err}
-		return
-	}
-	results <- &PayloadRequestResult{success: true, envelope: payload}
-}
-
-// makes parallel request to builder and engine to get the payload
-func getPayloadWithBuilderPayload(ctx context.Context, log log.Logger, eng ExecEngine, payloadInfo eth.PayloadInfo, l2head eth.L2BlockRef, builder builder.PayloadBuilder, metrics Metrics) (
-	*eth.ExecutionPayloadEnvelope, *PayloadRequestResult, error) {
-	// if builder is not enabled, return early with default path.
-	if !builder.Enabled() {
-		payload, err := eng.GetPayload(ctx, payloadInfo)
-		return payload, nil, err
-	}
-
-	log.Debug("requesting payload from builder", l2head.String(), "payloadInfo", payloadInfo)
-	ctxTimeout, cancel := context.WithTimeout(ctx, builder.Timeout())
-	defer cancel()
-
-	result := make(chan *PayloadRequestResult, 1)
-	go requestPayloadFromBuilder(ctxTimeout, builder, l2head, log, metrics, result)
-	envelope, err := eng.GetPayload(ctx, payloadInfo)
-	if err != nil {
-		log.Error("failed to get payload from engine", "error", err.Error())
-		return envelope, nil, err
-	}
-
-	// select the payload from builder if possible
-	select {
-	case <-ctxTimeout.Done():
-		metrics.RecordBuilderRequestTimeout()
-		log.Warn("builder request timed out", "error", ctxTimeout.Err())
-		return envelope, &PayloadRequestResult{success: false, error: ctxTimeout.Err()}, nil
-	case builderPayload := <-result:
-		if builderPayload.error != nil {
-			metrics.RecordBuilderRequestFail()
-			log.Warn("failed to get payload from builder", "error", builderPayload.error)
-			return envelope, builderPayload, nil
-		}
-		log.Info("received payload from builder", "hash", builderPayload.envelope.ExecutionPayload.BlockHash.String(), "number", uint64(builderPayload.envelope.ExecutionPayload.BlockNumber))
-		// TODO: ParentBeaconBlockRoot should have been delivered by the builder. Revisit when the builder API spec supports BeaconRoot.
-		builderPayload.envelope.ParentBeaconBlockRoot = envelope.ParentBeaconBlockRoot
-		return envelope, builderPayload, nil
-	}
-}
-
-func weiToGwei(v *eth.Uint256Quantity) uint64 {
-	if v == nil {
-		return 0
-	}
-	gweiPerEth := uint256.NewInt(1e9)
-	copied := uint256.NewInt(0).Set((*uint256.Int)(v))
-	copied.Div(copied, gweiPerEth)
-	return uint64(copied.Uint64())
-}
-
-// confirmPayload ends an execution payload building process in the provided Engine, and persists the payload as the canonical head.
-// If updateSafe is true, then the payload will also be recognized as safe-head at the same time.
-// The severity of the error is distinguished to determine whether the payload was valid and can become canonical.
 func confirmPayload(
 	ctx context.Context,
 	log log.Logger,
@@ -203,40 +137,35 @@ func confirmPayload(
 	l2head eth.L2BlockRef,
 	metrics Metrics,
 ) (*eth.ExecutionPayloadEnvelope, BlockInsertionErrType, error) {
+	builderManager := NewBuilderPayloadManager(builderClient, metrics)
 	var engineEnvelope *eth.ExecutionPayloadEnvelope
 	var builderPayload *PayloadRequestResult
 	var err error
-	// if the payload is available from the async gossiper, it means it was not yet imported, so we reuse it
+
 	if cached := agossip.Get(); cached != nil {
 		engineEnvelope = cached
-		// log a limited amount of information about the reused payload, more detailed logging happens later down
 		log.Debug("found uninserted payload from async gossiper, reusing it and bypassing engine",
 			"hash", engineEnvelope.ExecutionPayload.BlockHash,
 			"number", uint64(engineEnvelope.ExecutionPayload.BlockNumber),
 			"parent", engineEnvelope.ExecutionPayload.ParentHash,
 			"txs", len(engineEnvelope.ExecutionPayload.Transactions))
 	} else {
-		engineEnvelope, builderPayload, err = getPayloadWithBuilderPayload(ctx, log, eng, payloadInfo, l2head, builderClient, metrics)
+		engineEnvelope, builderPayload, err = builderManager.getPayloadWithBuilderPayload(ctx, log, eng, payloadInfo, l2head)
 		if err != nil {
-			// even if it is an input-error (unknown payload ID), it is temporary, since we will re-attempt the full payload building, not just the retrieval of the payload.
 			return nil, BlockInsertTemporaryErr, fmt.Errorf("failed to get execution payload from engine: %w", err)
 		}
 	}
-	metrics.RecordSequencerProfit(float64(weiToGwei(engineEnvelope.BlockValue)), opMetrics.PayloadSourceEngine)
-	metrics.RecordPayloadGas(float64(engineEnvelope.ExecutionPayload.GasUsed), opMetrics.PayloadSourceEngine)
-	metrics.CountSequencedTxsBySource(len(engineEnvelope.ExecutionPayload.Transactions), opMetrics.PayloadSourceEngine)
+	builderManager.RecordMetrics(engineEnvelope, opMetrics.PayloadSourceEngine)
 
 	if builderPayload != nil && builderPayload.success {
 		if builderPayload.envelope.ExecutionPayload.GasUsed >= engineEnvelope.ExecutionPayload.GasUsed {
 			log.Info("builder payload has higher gas usage than engine payload", "builder_gas", builderPayload.envelope.ExecutionPayload.GasUsed, "engine_gas", engineEnvelope.ExecutionPayload.GasUsed)
-			metrics.RecordSequencerProfit(float64(weiToGwei(builderPayload.envelope.BlockValue)), opMetrics.PayloadSourceBuilder)
-			metrics.RecordPayloadGas(float64(builderPayload.envelope.ExecutionPayload.GasUsed), opMetrics.PayloadSourceBuilder)
-			metrics.CountSequencedTxsBySource(len(builderPayload.envelope.ExecutionPayload.Transactions), opMetrics.PayloadSourceBuilder)
+			builderManager.RecordMetrics(builderPayload.envelope, opMetrics.PayloadSourceBuilder)
 
 			errTyp, err := insertPayload(ctx, log, eng, fc, updateSafe, agossip, sequencerConductor, builderPayload.envelope)
 			if errTyp == BlockInsertOK {
 				metrics.RecordSequencerPayloadInserted(opMetrics.PayloadSourceBuilder)
-				log.Info("succeessfully inserted payload from builder")
+				log.Info("successfully inserted payload from builder")
 				return builderPayload.envelope, errTyp, err
 			}
 			log.Error("failed to insert payload from builder", "errType", errTyp, "error", err)
