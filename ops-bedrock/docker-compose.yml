@@ -280,6 +280,7 @@ services:
       - builder-op-geth
     command: >
       op-node
+      --sequencer.enabled
       --l1=ws://l1:8546
       --l2=http://builder-op-geth:8551
       --l2.jwt-secret=/config/test-jwt-secret.txt
@@ -308,9 +309,7 @@ services:
   builder-op-geth:
     build:
       context: .
-      dockerfile: Dockerfile.builder
-      args:
-        BUILDER_IMAGE: ${BUILDER_IMAGE:-flashbots/op-geth:latest}
+      dockerfile: Dockerfile.l2
     depends_on:
       - l1
       - l2
@@ -328,19 +327,10 @@ services:
       - "/bin/sh"
       - "/entrypoint.sh"
       - "--authrpc.jwtsecret=/config/test-jwt-secret.txt"
-      - "--http.api=web3,debug,eth,txpool,net,engine"
-      - "--syncmode=full"
-      - "--gcmode=archive"
+      - "--nodekeyhex=e8e00ec43b690f02844ed9b062decc3d613323cd136cf3bfbd30f1635698e5e5"
+      - "--rollup.disabletxpoolgossip"
       - "--bootnodes=enode://e42b01e82d3cf3e43bf8709509baf2043923f998693b405f67c7643950c904391bb58e363ac48e9b7137cb5491b6fa359e4d4b95caaa0ef3570073332e09f659@10.5.0.200:30303"
       - "--nat=extip:10.5.0.201"
-      - "--rollup.disabletxpoolgossip"
-      - "--builder"
-      - "--builder.beacon_endpoints=http://builder-op-node:9546"
-      - "--builder.block_retry_interval=100ms"
-      - "--builder.block_time=2s"
-      - "--builder.proposer_signing_address=0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"
-      - "--builder.signing_key=2fc12ae741f29701f8e30f5de6350766c020cb80768a0ff01e6838ffd2431e11"
-      - "--metrics"
     environment:
       GETH_MINER_RECOMMIT: 100ms
     networks:

@@ -82,6 +82,8 @@ type Config struct {
 	BuilderTimeout       time.Duration
 	BuilderRequestSigner string
 
+	Builder2Enabled bool
+
 	// Plasma DA config
 	Plasma plasma.CLIConfig
 

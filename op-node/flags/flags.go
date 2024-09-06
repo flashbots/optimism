@@ -408,6 +408,12 @@ var (
 		EnvVars:  prefixEnvVars("L2_BUILDER_SIGNER"),
 		Category: BuilderCategory,
 	}
+	BuilderEnabled2Flag = &cli.StringFlag{
+		Name:     "l2.builder.enabled2",
+		Usage:    "Enable the builder API server to return built blocks",
+		Required: false,
+		Category: BuilderCategory,
+	}
 )
 
 var requiredFlags = []cli.Flag{
@@ -421,6 +427,7 @@ var optionalFlags = []cli.Flag{
 	BuilderEndpointFlag,
 	BuilderRequestTimeoutFlag,
 	BuilderRequestSignerFlag,
+	BuilderEnabled2Flag,
 	BeaconAddr,
 	BeaconHeader,
 	BeaconFallbackAddrs,

@@ -6,15 +6,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/holiman/uint256"
-
 	opMetrics "github.com/ethereum-optimism/optimism/op-node/metrics"
+	builderTypes "github.com/ethereum-optimism/optimism/op-node/node/types"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/async"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/builder"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/conductor"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/holiman/uint256"
 )
 
 // isDepositTx checks an opaqueTx to determine if it is a Deposit Transaction
@@ -137,12 +138,50 @@ func requestPayloadFromBuilder(ctx context.Context, builder builder.PayloadBuild
 	results <- &PayloadRequestResult{success: true, envelope: payload}
 }
 
+var savedPayloads map[eth.L2BlockRef]*eth.ExecutionPayloadEnvelope
+var builderServer *builder.BuilderService
+
+func init() {
+	savedPayloads = make(map[eth.L2BlockRef]*eth.ExecutionPayloadEnvelope)
+	builderServer = builder.NewService("0.0.0.0:8080", builder.BuilderServerImpl(&builderServerImpl{}), common.Address{})
+}
+
+type builderServerImpl struct {
+}
+
+func (b *builderServerImpl) GetPayload(request *builderTypes.BuilderPayloadRequest) (*builderTypes.VersionedBuilderPayloadResponse, error) {
+
+	// search by parent hash for now
+	for _, payload := range savedPayloads {
+		if payload.ExecutionPayload.ParentHash == request.Message.ParentHash {
+
+			// FIX THIS
+			return &builderTypes.VersionedBuilderPayloadResponse{
+				Version:          builderTypes.SpecVersionCanyon,
+				ExecutionPayload: payload,
+			}, nil
+		}
+	}
+
+	return nil, nil
+}
+
 // makes parallel request to builder and engine to get the payload
 func getPayloadWithBuilderPayload(ctx context.Context, log log.Logger, eng ExecEngine, payloadInfo eth.PayloadInfo, l2head eth.L2BlockRef, builder builder.PayloadBuilder, metrics Metrics) (
 	*eth.ExecutionPayloadEnvelope, *PayloadRequestResult, error) {
 	// if builder is not enabled, return early with default path.
 	if !builder.Enabled() {
 		payload, err := eng.GetPayload(ctx, payloadInfo)
+
+		fmt.Println("- get payload returned the object -")
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// save the payload, FOR SIMPLIFITY assuem this is the code path for the builder not the producer, later one we only
+		// do this if there is a builder flag enabled.
+		savedPayloads[l2head] = payload
+
 		return payload, nil, err
 	}
 

@@ -119,6 +119,8 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		BuilderTimeout:       ctx.Duration(flags.BuilderRequestTimeoutFlag.Name),
 		BuilderRequestSigner: ctx.String(flags.BuilderRequestSignerFlag.Name),
 
+		Builder2Enabled: ctx.Bool(flags.BuilderEnabled2Flag.Name),
+
 		Plasma: plasma.ReadCLIConfig(ctx),
 
 		PublishPayloadAttributes: ctx.Bool(flags.SequencerPublishAttributesFlag.Name),
