@@ -341,6 +341,7 @@ services:
       - "--builder.proposer_signing_address=0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"
       - "--builder.signing_key=2fc12ae741f29701f8e30f5de6350766c020cb80768a0ff01e6838ffd2431e11"
       - "--metrics"
+      - "--builder.extra_data=flashbots"
     environment:
       GETH_MINER_RECOMMIT: 100ms
     networks:
