@@ -80,7 +80,7 @@ type httpErrorResp struct {
 	Message string `json:"message"`
 }
 
-func (s *BuilderAPIClient) GetPayload(ctx context.Context, ref eth.L2BlockRef, log log.Logger, metrics builder.BuilderMetrics) (*eth.ExecutionPayloadEnvelope, error) {
+func (s *BuilderAPIClient) GetPayload(ctx context.Context, ref eth.L2BlockRef, log log.Logger, metrics builder.Metrics) (*eth.ExecutionPayloadEnvelope, error) {
 	submitBlockRequest := new(builderSpec.VersionedSubmitBlockRequest)
 	slot := ref.Number + 1
 	parentHash := ref.Hash
