@@ -11,10 +11,9 @@ volumes:
   challenger_data:
   da_data:
   op_log:
-
+  builder_data:
 
 services:
-
   l1:
     build:
       context: .
@@ -34,8 +33,8 @@ services:
     depends_on:
       - l1
     build:
-        context: .
-        dockerfile: l1-lighthouse.Dockerfile
+      context: .
+      dockerfile: l1-lighthouse.Dockerfile
     ports:
       - "9000:9000"
       - "5052:5052"
@@ -56,8 +55,8 @@ services:
       - l1
       - l1-bn
     build:
-        context: .
-        dockerfile: l1-lighthouse.Dockerfile
+      context: .
+      dockerfile: l1-lighthouse.Dockerfile
     volumes:
       - "l1_vc_data:/db"
       - "${PWD}/beacon-data/data/keys:/validator_setup/validators"
@@ -78,11 +77,12 @@ services:
     ports:
       - "9545:8545"
       - "8060:6060"
+      - "8551:8551"
     volumes:
       - "l2_data:/db"
       - "${PWD}/../.devnet/genesis-l2.json:/genesis.json"
       - "${PWD}/test-jwt-secret.txt:/config/jwt-secret.txt"
-    entrypoint:  # pass the L2 specific flags by overriding the entry-point and adding extra arguments
+    entrypoint: # pass the L2 specific flags by overriding the entry-point and adding extra arguments
       - "/bin/sh"
       - "/entrypoint.sh"
     environment:
@@ -105,7 +105,7 @@ services:
       --l1.beacon=http://l1-bn:5052
       --l1.epoch-poll-interval=12s
       --l1.http-poll-interval=6s
-      --l2=http://l2:8551
+      --l2=http://host.docker.internal:8081
       --l2.jwt-secret=/config/jwt-secret.txt
       --sequencer.enabled
       --sequencer.l1-confs=0
@@ -281,3 +281,81 @@ services:
       - "${PWD}/../.devnet/:/usr/share/nginx/html/:ro"
     security_opt:
       - "no-new-privileges:true"
+
+  builder-op-node:
+    build:
+      context: ../
+      dockerfile: ops/docker/op-stack-go/Dockerfile
+      target: op-node-target
+    image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-node:devnet
+    depends_on:
+      - l1
+      - l2
+      - op-node
+      - builder-op-geth
+    command: >
+      op-node
+      --l1=ws://l1:8546
+      --l1.beacon=http://l1-bn:5052
+      --l1.epoch-poll-interval=12s
+      --l1.http-poll-interval=6s
+      --l2=http://builder-op-geth:8551
+      --l2.jwt-secret=/config/jwt-secret.txt
+      --rollup.config=/rollup.json
+      --rpc.addr=0.0.0.0
+      --rpc.port=8545
+      --p2p.listen.ip=0.0.0.0
+      --p2p.listen.tcp=9003
+      --p2p.listen.udp=9003
+      --p2p.scoring.peers=light
+      --p2p.ban.peers=true
+      --metrics.enabled
+      --metrics.addr=0.0.0.0
+      --metrics.port=7300
+      --pprof.enabled
+      --rpc.enable-admin
+      --safedb.path=/db
+      --altda.enabled=${ALTDA_ENABLED}
+      --altda.da-service=${ALTDA_SERVICE}
+      --altda.da-server=http://da-server:3100
+      --p2p.static=/dns/op-node/tcp/9003/p2p/16Uiu2HAmHqrXGts25TtKMBRHtvhWZLNypsobKoggpZye1XQtJpbZ
+    volumes:
+      - "${PWD}/test-jwt-secret.txt:/config/jwt-secret.txt"
+      - "${PWD}/../.devnet/rollup.json:/rollup.json"
+    ports:
+      - 9546:9546
+
+  builder-op-geth:
+    build:
+      context: .
+      dockerfile: l2-op-geth.Dockerfile
+    ports:
+      - "5545:8545"
+      - "6063:6060"
+      - "8552:8551"
+    volumes:
+      - "builder_data:/db"
+      - "${PWD}/../.devnet/genesis-l2.json:/genesis.json"
+      - "${PWD}/test-jwt-secret.txt:/config/jwt-secret.txt"
+    entrypoint: # pass the L2 specific flags by overriding the entry-point and adding extra arguments
+      - "/bin/sh"
+      - "/entrypoint.sh"
+    environment:
+      GETH_MINER_RECOMMIT: 100ms
+
+  load-test:
+    depends_on:
+      - l2
+      - builder-op-geth
+    build:
+      context: .
+      dockerfile: Dockerfile.tx-fuzz
+    entrypoint:
+      - "/app/livefuzzer"
+      - "spam"
+      - "--txcount=10"
+      - "--seed=31337"
+      - "--slot-time=1"
+      - "--sk=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+      - "--rpc=http://builder-op-geth:8545"
+      - "--rpc2=http://l2:8545"
