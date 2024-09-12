@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"flag"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -19,30 +20,33 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// hardcoded variables that we need to move to flags
 var (
-	jwtTokenStr = "688f5d737bad920bdfb2fc2f488d6b6209eebda1dae949a8de91398d932c517a"
-	opgethURL   = "http://localhost:8551"
-	builderURL  = "http://localhost:8552"
+	defaultJwtTokenStr = "688f5d737bad920bdfb2fc2f488d6b6209eebda1dae949a8de91398d932c517a"
+	defaultOpgethURL   = "http://localhost:8551"
+	defaultBuilderURL  = "http://localhost:8552"
 )
 
 func main() {
+	jwtTokenStr := flag.String("jwt-token", defaultJwtTokenStr, "JWT token to authenticate with the RPC")
+	opgethURL := flag.String("opgeth-url", defaultOpgethURL, "URL of the op-geth RPC")
+	builderURL := flag.String("builder-url", defaultBuilderURL, "URL of the builder RPC")
+
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelDebug, true)))
 	srv := rpc.NewServer()
 
-	jwtToken, err := hex.DecodeString(jwtTokenStr)
+	jwtToken, err := hex.DecodeString(*jwtTokenStr)
 	if err != nil {
 		log.Error("Failed to decode JWT token", "err", err)
 		os.Exit(1)
 	}
 
-	opGethRef, err := rpc.DialOptions(context.Background(), opgethURL, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(jwtToken))))
+	opGethRef, err := rpc.DialOptions(context.Background(), *opgethURL, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(jwtToken))))
 	if err != nil {
 		log.Error("Failed to connect to RPC", "err", err)
 		os.Exit(1)
 	}
 
-	builderRef, err := rpc.DialOptions(context.Background(), builderURL, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(jwtToken))))
+	builderRef, err := rpc.DialOptions(context.Background(), *builderURL, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(jwtToken))))
 	if err != nil {
 		log.Error("Failed to connect to RPC", "err", err)
 		os.Exit(1)
