@@ -30,6 +30,7 @@ func main() {
 	jwtTokenStr := flag.String("jwt-token", defaultJwtTokenStr, "JWT token to authenticate with the RPC")
 	opgethURL := flag.String("opgeth-url", defaultOpgethURL, "URL of the op-geth RPC")
 	builderURL := flag.String("builder-url", defaultBuilderURL, "URL of the builder RPC")
+	flag.Parse()
 
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelDebug, true)))
 	srv := rpc.NewServer()
@@ -52,7 +53,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	backend := &backend{clt: opGethRef, builder: builderRef}
+	backend := &backend{clt: opGethRef, builder: builderRef, builderBlock: make(chan *header)}
 	if err := srv.RegisterName("eth", &ethBackend{backend}); err != nil {
 		log.Error("Failed to register 'eth' backend", "err", err)
 		os.Exit(1)
@@ -61,6 +62,8 @@ func main() {
 		log.Error("Failed to register 'engine' backend", "err", err)
 		os.Exit(1)
 	}
+
+	go backend.trackBuilderBlock()
 
 	// Create a new ServeMux
 	mux := http.NewServeMux()
@@ -79,9 +82,38 @@ func main() {
 	}
 }
 
+// TODO: Not sure why types.Header was not working
+type header struct {
+	ParentHash common.Hash    `json:"parentHash"`
+	Number     hexutil.Uint64 `json:"number"`
+}
+
+func (b *backend) trackBuilderBlock() error {
+	var lastHead *header
+
+	for {
+		<-time.After(20 * time.Millisecond) // TODO: Use ws subscription instead of polling
+
+		var newHead *header
+		if err := b.builder.Call(&newHead, "eth_getBlockByNumber", rpc.LatestBlockNumber, false); err == nil {
+			if lastHead == nil || newHead.Number > lastHead.Number {
+				lastHead = newHead
+
+				select {
+				case b.builderBlock <- newHead:
+				default:
+				}
+			}
+		}
+	}
+}
+
 type backend struct {
 	clt     *rpc.Client
 	builder *rpc.Client
+
+	// notification for builder block
+	builderBlock chan *header
 }
 
 func (b *backend) ChainId() (*big.Int, error) {
@@ -112,8 +144,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 		return nil, err
 	}
 
-	fmt.Println("-- engine 1 --")
-	fmt.Println(result)
+	log.Info("ForkchoiceUpdatedV3", "payloadID", result.PayloadID)
 
 	// if there are attributes, relay the info to the builder too
 	if params != nil {
@@ -121,27 +152,32 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 			tm := time.NewTimer(1 * time.Second)
 
 			for {
-				select {
-				case <-time.After(50 * time.Millisecond): // wait enough time for it to be there, later on this can be imrpoved
-				case <-tm.C:
-					return
-				}
-
 				// with stream or polling if syncing.
 				var result2 engine.ForkChoiceResponse
 				if err := b.builder.Call(&result2, "engine_forkchoiceUpdatedV3", update, params); err != nil {
-					fmt.Println("- err -", err)
-				}
-				if result2.PayloadStatus.Status == engine.SYNCING {
-					fmt.Println("- err it is syncing -")
+					log.Error("Failed to call 'builder' engine_forkchoiceUpdatedV3", "err", err)
 				} else {
-					fmt.Println("-- engine 2 --")
-					fmt.Println(result2)
+					status := result2.PayloadStatus.Status
+					switch status {
+					case engine.VALID:
+						// The builder has accepted the payload, check if the payloadID matches
+						if !bytes.Equal((*result2.PayloadID)[:], (*result.PayloadID)[:]) {
+							panic("PayloadID mismatch")
+						}
+						log.Info("Builder accepted payload", "payloadID", result2.PayloadID)
+						return
 
-					if !bytes.Equal((*result2.PayloadID)[:], (*result.PayloadID)[:]) {
-						panic("PayloadID mismatch")
+					case engine.INVALID:
+						// The builder has rejected the payload
+						log.Error("Builder rejected payload", "payloadID", result2.PayloadID)
+					case engine.SYNCING:
+						// The builder is syncing, wait and try again on the next block
+						select {
+						case <-b.builderBlock:
+						case <-tm.C:
+							return
+						}
 					}
-					return
 				}
 			}
 		}()
