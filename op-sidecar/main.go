@@ -92,7 +92,9 @@ func (b *backend) trackBuilderBlock() error {
 	var lastHead *header
 
 	for {
-		<-time.After(20 * time.Millisecond) // TODO: Use ws subscription instead of polling
+		// TODO: This is not ideal, a better solution would be to use a ws connection. But, I did not
+		// wanted to deal with reconnecting for now.
+		<-time.After(20 * time.Millisecond)
 
 		var newHead *header
 		if err := b.builder.Call(&newHead, "eth_getBlockByNumber", rpc.LatestBlockNumber, false); err == nil {
@@ -114,28 +116,6 @@ type backend struct {
 
 	// notification for builder block
 	builderBlock chan *header
-}
-
-func (b *backend) ChainId() (*big.Int, error) {
-	return ethclient.NewClient(b.clt).ChainID(context.Background())
-}
-
-func (b *backend) GetBlockByNumber(number rpc.BlockNumber, full bool) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	err := b.clt.Call(&result, "eth_getBlockByNumber", number, full)
-	return result, err
-}
-
-func (b *backend) GetBlockByHash(hash common.Hash, full bool) (map[string]interface{}, error) {
-	var result map[string]interface{}
-	err := b.clt.Call(&result, "eth_getBlockByHash", hash, full)
-	return result, err
-}
-
-func (b *backend) GetProof(address common.Address, storageKeys []string, blockNrOrHash rpc.BlockNumberOrHash) (*AccountResult, error) {
-	var result AccountResult
-	err := b.clt.Call(&result, "eth_getProof", address, storageKeys, blockNrOrHash)
-	return &result, err
 }
 
 func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *engine.PayloadAttributes) (*engine.ForkChoiceResponse, error) {
@@ -174,6 +154,9 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 						// The builder is syncing, wait and try again on the next block
 						select {
 						case <-b.builderBlock:
+							// TODO: There is a small race condition here, if multiple fcu with params get triggered
+							// at the same time, this channel will only trigger once and only one of the routines
+							// will continue. This is fine for now, since anyway most of the fcu are pretty much sequential.
 						case <-tm.C:
 							return
 						}
@@ -205,6 +188,30 @@ func (b *backend) GetPayloadV3(payloadID engine.PayloadID) (*engine.ExecutionPay
 	}
 
 	return &result, nil
+}
+
+// The next methods are just wrappers to relay the engine calls from the proposer op-node to its op-geth.
+
+func (b *backend) ChainId() (*big.Int, error) {
+	return ethclient.NewClient(b.clt).ChainID(context.Background())
+}
+
+func (b *backend) GetBlockByNumber(number rpc.BlockNumber, full bool) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := b.clt.Call(&result, "eth_getBlockByNumber", number, full)
+	return result, err
+}
+
+func (b *backend) GetBlockByHash(hash common.Hash, full bool) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	err := b.clt.Call(&result, "eth_getBlockByHash", hash, full)
+	return result, err
+}
+
+func (b *backend) GetProof(address common.Address, storageKeys []string, blockNrOrHash rpc.BlockNumberOrHash) (*AccountResult, error) {
+	var result AccountResult
+	err := b.clt.Call(&result, "eth_getProof", address, storageKeys, blockNrOrHash)
+	return &result, err
 }
 
 func (b *backend) NewPayloadV3(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash) (engine.PayloadStatusV1, error) {
