@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"os"
@@ -14,11 +15,22 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
+	trace2 "go.opentelemetry.io/otel/trace" // this rename is ugly
 )
+
+// Using a custom go.mod because the OTEL library creates conflicts with other op-node dependencies
+// Anyway, this project will most likely live outside op-stack too.
 
 var (
 	defaultJwtTokenStr = "688f5d737bad920bdfb2fc2f488d6b6209eebda1dae949a8de91398d932c517a"
@@ -30,9 +42,17 @@ func main() {
 	jwtTokenStr := flag.String("jwt-token", defaultJwtTokenStr, "JWT token to authenticate with the RPC")
 	opgethURL := flag.String("opgeth-url", defaultOpgethURL, "URL of the op-geth RPC")
 	builderURL := flag.String("builder-url", defaultBuilderURL, "URL of the builder RPC")
+	tracing := flag.Bool("tracing", false, "Enable tracing")
+	logLevelStr := flag.String("log-level", "INFO", "")
 	flag.Parse()
 
-	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelDebug, true)))
+	var logLevel slog.Level
+	if err := logLevel.UnmarshalText([]byte(*logLevelStr)); err != nil {
+		log.Error("Failed to parse log level", "err", err)
+		os.Exit(1)
+	}
+
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, logLevel, true)))
 	srv := rpc.NewServer()
 
 	jwtToken, err := hex.DecodeString(*jwtTokenStr)
@@ -53,7 +73,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	backend := &backend{clt: opGethRef, builder: builderRef, builderBlock: make(chan *header)}
+	backend := &backend{
+		clt:                              opGethRef,
+		builder:                          builderRef,
+		builderBlock:                     make(chan *header),
+		payloadIdToPayloadTracker:        lru.NewCache[engine.PayloadID, *payloadTracker](100),
+		payloadTimestampToPayloadTracker: lru.NewCache[uint64, *payloadTracker](100),
+	}
 	if err := srv.RegisterName("eth", &ethBackend{backend}); err != nil {
 		log.Error("Failed to register 'eth' backend", "err", err)
 		os.Exit(1)
@@ -64,6 +90,13 @@ func main() {
 	}
 
 	go backend.trackBuilderBlock()
+
+	if *tracing {
+		if err := startTracing(); err != nil {
+			log.Error("Failed to start tracing", "err", err)
+			os.Exit(1)
+		}
+	}
 
 	// Create a new ServeMux
 	mux := http.NewServeMux()
@@ -80,6 +113,42 @@ func main() {
 		fmt.Println("Server error: ", err)
 		os.Exit(1)
 	}
+}
+
+func startTracing() error {
+	headers := map[string]string{
+		"content-type": "application/json",
+	}
+
+	exporter, err := otlptrace.New(
+		context.Background(),
+		otlptracehttp.NewClient(
+			otlptracehttp.WithEndpoint("localhost:4318"),
+			otlptracehttp.WithHeaders(headers),
+			otlptracehttp.WithInsecure(),
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("creating new exporter: %w", err)
+	}
+
+	tracerprovider := trace.NewTracerProvider(
+		trace.WithBatcher(
+			exporter,
+			trace.WithMaxExportBatchSize(trace.DefaultMaxExportBatchSize),
+			trace.WithBatchTimeout(trace.DefaultScheduleDelay*time.Millisecond),
+			trace.WithMaxExportBatchSize(trace.DefaultMaxExportBatchSize),
+		),
+		trace.WithResource(
+			resource.NewWithAttributes(
+				semconv.SchemaURL,
+				semconv.ServiceNameKey.String("builder-boost"),
+			),
+		),
+	)
+
+	otel.SetTracerProvider(tracerprovider)
+	return nil
 }
 
 // TODO: Not sure why types.Header was not working
@@ -114,9 +183,30 @@ type backend struct {
 	clt     *rpc.Client
 	builder *rpc.Client
 
+	// Ideally, we only keep one payload a time, since only one block is being built at a time.
+	// But, since I am not sure about the workflow between op-node <> op-geth, we will keep multiple
+	// payload entries for now. Using an LRU cache so that I do not have to worry about cleaning up.
+	payloadIdToPayloadTracker        *lru.Cache[engine.PayloadID, *payloadTracker]
+	payloadTimestampToPayloadTracker *lru.Cache[uint64, *payloadTracker]
+
 	// notification for builder block
 	builderBlock chan *header
 }
+
+type payloadTracker struct {
+	builderHasPayload bool
+
+	traceCtx  context.Context
+	traceSpan trace2.Span
+}
+
+func (p *payloadTracker) Close() {
+	p.traceSpan.End()
+}
+
+var (
+	tracer = otel.Tracer("builder-boost")
+)
 
 func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *engine.PayloadAttributes) (*engine.ForkChoiceResponse, error) {
 	var result engine.ForkChoiceResponse
@@ -128,7 +218,19 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 
 	// if there are attributes, relay the info to the builder too
 	if params != nil {
+		ctx, span := tracer.Start(context.Background(), "fcu")
+
+		if result.PayloadID == nil {
+			panic(fmt.Sprintf("BUG: Unexpected nil payloadID in ForkchoiceUpdatedV3 result with params: %v", result))
+		}
+
+		// create a new payload lifecycle for this payload and store it
+		b.payloadIdToPayloadTracker.Add(*result.PayloadID, &payloadTracker{traceCtx: ctx, traceSpan: span})
+
 		go func() {
+			_, span := tracer.Start(ctx, "wait_for_builder")
+			defer span.End()
+
 			tm := time.NewTimer(1 * time.Second)
 
 			for {
@@ -145,6 +247,13 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 							panic("PayloadID mismatch")
 						}
 						log.Info("Builder accepted payload", "payloadID", result2.PayloadID)
+
+						// update the payload tracker to indicate the builder has the payload
+						val, ok := b.payloadIdToPayloadTracker.Get(*result.PayloadID)
+						if ok {
+							val.builderHasPayload = true // TODO: data race
+						}
+
 						return
 
 					case engine.INVALID:
@@ -170,24 +279,58 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 }
 
 func (b *backend) GetPayloadV3(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
-	var result engine.ExecutionPayloadEnvelope
-	if err := b.clt.Call(&result, "engine_getPayloadV3", payloadID); err != nil {
+	var opGethPayload engine.ExecutionPayloadEnvelope
+	if err := b.clt.Call(&opGethPayload, "engine_getPayloadV3", payloadID); err != nil {
 		return nil, err
 	}
 
-	// get the payload from builder
-	var result2 engine.ExecutionPayloadEnvelope
-	if err := b.builder.Call(&result2, "engine_getPayloadV3", payloadID); err != nil {
-		fmt.Println("- err -", err)
-		// panic(err) // handle this error, do not retunr error since we have to return at least one payload
-		// if the op-geth returned one.
-	} else {
-		fmt.Println("- builder payload -")
-		fmt.Println(result2)
-		return &result2, nil
+	// get the payload tracker instance
+	payloadTracker, ok := b.payloadIdToPayloadTracker.Get(payloadID)
+	if !ok {
+		// BUG? The payload tracker should be available (except for this blocks if we are in the middle of a block)
+		log.Debug("Payload tracker not found", "payloadID", payloadID)
+		return &opGethPayload, nil
 	}
 
-	return &result, nil
+	_, span := tracer.Start(payloadTracker.traceCtx, "get_payload")
+	defer span.End()
+
+	log.Info("GetPayloadV3", "payloadID", payloadID, "builderHasPayload", payloadTracker.builderHasPayload)
+
+	if !payloadTracker.builderHasPayload {
+		// The builder did not sync up to deliver the block, return the op-geth payload
+		return &opGethPayload, nil
+	}
+
+	// TODO: We can query this in parallel with the op-geth node.
+	var builderPayload engine.ExecutionPayloadEnvelope
+	if err := b.builder.Call(&builderPayload, "engine_getPayloadV3", payloadID); err != nil {
+		log.Error("Failed to retrieve 'builder' engine_getPayloadV3", "err", err)
+		return &opGethPayload, nil
+	}
+
+	// keep a reverse index to map the builder-payload timestamp to the payload tracker since we want to also
+	// account for the span in newPayloadV3 but we do not have the payloadID there.
+	b.payloadTimestampToPayloadTracker.Add(builderPayload.ExecutionPayload.Timestamp, payloadTracker)
+
+	return &builderPayload, nil
+}
+
+func (b *backend) NewPayloadV3(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash) (engine.PayloadStatusV1, error) {
+	// trace the time it takes for new payload if there is a payload tracker for this payload (check the timestamp)
+	payloadTracker, ok := b.payloadTimestampToPayloadTracker.Get(params.Timestamp)
+	if ok {
+		_, span := tracer.Start(payloadTracker.traceCtx, "new_payload")
+		defer func() {
+			span.End()
+			// close also the payload tracker to signal the end of the payload lifecycle
+			payloadTracker.Close()
+		}()
+	}
+
+	var result engine.PayloadStatusV1
+	err := b.clt.Call(&result, "engine_newPayloadV3", params, versionedHashes, beaconRoot)
+	return result, err
 }
 
 // The next methods are just wrappers to relay the engine calls from the proposer op-node to its op-geth.
@@ -212,12 +355,6 @@ func (b *backend) GetProof(address common.Address, storageKeys []string, blockNr
 	var result AccountResult
 	err := b.clt.Call(&result, "eth_getProof", address, storageKeys, blockNrOrHash)
 	return &result, err
-}
-
-func (b *backend) NewPayloadV3(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash) (engine.PayloadStatusV1, error) {
-	var result engine.PayloadStatusV1
-	err := b.clt.Call(&result, "engine_newPayloadV3", params, versionedHashes, beaconRoot)
-	return result, err
 }
 
 type backendStub interface {
