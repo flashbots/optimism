@@ -214,7 +214,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 		return nil, err
 	}
 
-	log.Info("ForkchoiceUpdatedV3", "payloadID", result.PayloadID)
+	log.Info("ForkchoiceUpdatedV3", "head", update.HeadBlockHash, "payloadID", result.PayloadID)
 
 	// if there are attributes, relay the info to the builder too
 	if params != nil {
@@ -231,6 +231,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 			_, span := tracer.Start(ctx, "wait_for_builder")
 			defer span.End()
 
+			now := time.Now()
 			tm := time.NewTimer(1 * time.Second)
 
 			for {
@@ -246,7 +247,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 						if !bytes.Equal((*result2.PayloadID)[:], (*result.PayloadID)[:]) {
 							panic("PayloadID mismatch")
 						}
-						log.Info("Builder accepted payload", "payloadID", result2.PayloadID)
+						log.Info("Builder accepted payload", "payloadID", result2.PayloadID, "duration", time.Since(now))
 
 						// update the payload tracker to indicate the builder has the payload
 						val, ok := b.payloadIdToPayloadTracker.Get(*result.PayloadID)
@@ -260,6 +261,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 						// The builder has rejected the payload
 						log.Error("Builder rejected payload", "payloadID", result2.PayloadID)
 					case engine.SYNCING:
+						log.Debug("Builder is syncing", "payloadID", result2.PayloadID)
 						// The builder is syncing, wait and try again on the next block
 						select {
 						case <-b.builderBlock:
