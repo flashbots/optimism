@@ -1,7 +1,3 @@
-# PBS
-
-Proposer builder seperation for Op Stack.
-
 ## How to run the devnet
 
 ### Running with default flashbots/op-geth builder image.
@@ -34,7 +30,7 @@ $ BUILDER_IMAGE=<YOUR_OP_GETH_BUILDER_IMAGE> DEVNET_BUILDER=true make devnet-up
 
 ## Configuration
 
-These are the configuration options to enable PBS for the devnet.
+These are the configuration options to enable the op-geth builder for the devnet.
 
 ### Sequencer
 
@@ -65,6 +61,5 @@ These are the builder flags to enable the builder service in op-geth:
 |-----------------------------------|----------------------------------------------------------------------------------------------|---------------|
 | `builder`                         | Enable the builder service.                                                                  | `false`       |
 | `builder.beacon_endpoints`        | The op-node address to get the payload attributes from. Should be set to `builder-op-node`.  | `""`          |
-| `builder.block_retry_interval`    | The interval to retry building the payload.                                                  | `500ms`       |
 | `builder.block_time`              | Block time of the network.                                                                   | `2s`          |
 | `builder.proposer_signing_address`| The address of the proposer signing the builder requests.                                    | `""`          |
