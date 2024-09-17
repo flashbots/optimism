@@ -275,6 +275,12 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 				}
 			}
 		}()
+	} else {
+		// TODO: As with the engine_newPayloadV3 call, this fails if the builder node is not synced with the chain.
+		var result engine.ForkChoiceResponse
+		if err := b.clt.Call(&result, "engine_forkchoiceUpdatedV3", update, params); err != nil {
+			return nil, err
+		}
 	}
 
 	return &result, nil
@@ -311,6 +317,18 @@ func (b *backend) GetPayloadV3(payloadID engine.PayloadID) (*engine.ExecutionPay
 		return &opGethPayload, nil
 	}
 
+	log.Info("builder payload", "hash", builderPayload.ExecutionPayload.BlockHash)
+
+	{
+		// Send the payload to the op-geth node with engine_newPayload to make sure it is valid for him too.
+		// Otherwise, we do not want to risk the network to a halt since op-node will not be able to propose the block.
+		// If we cannot validate it, return the one from op-geth since that one has already being validated.
+		if err := b.clt.Call(nil, "engine_newPayloadV3", builderPayload.ExecutionPayload, []common.Hash{}, builderPayload.ParentBeaconBlockRoot); err != nil {
+			log.Error("Failed to validate builder block on op-geth", "err", err)
+			return &opGethPayload, nil
+		}
+	}
+
 	// keep a reverse index to map the builder-payload timestamp to the payload tracker since we want to also
 	// account for the span in newPayloadV3 but we do not have the payloadID there.
 	b.payloadTimestampToPayloadTracker.Add(builderPayload.ExecutionPayload.Timestamp, payloadTracker)
@@ -328,6 +346,15 @@ func (b *backend) NewPayloadV3(params engine.ExecutableData, versionedHashes []c
 			// close also the payload tracker to signal the end of the payload lifecycle
 			payloadTracker.Close()
 		}()
+	}
+
+	{
+		// TODO: This fails if the builder node is not synced with the chain.
+		// We send both newPayload and fcu (withotu attributes) to advance the builder EL node
+		// at the same time we advance the proposer node.
+		if err := b.builder.Call(nil, "engine_newPayloadV3", params, versionedHashes, beaconRoot); err != nil {
+			log.Error("Failed to sync new payload with engine", "err", err)
+		}
 	}
 
 	var result engine.PayloadStatusV1
