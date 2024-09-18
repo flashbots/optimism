@@ -10,6 +10,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.30.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.30.0
 	go.opentelemetry.io/otel/sdk v1.30.0
+	go.opentelemetry.io/otel/trace v1.30.0
 )
 
 require (
@@ -82,7 +83,6 @@ require (
 	github.com/urfave/cli/v2 v2.25.7 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.opentelemetry.io/otel/metric v1.30.0 // indirect
-	go.opentelemetry.io/otel/trace v1.30.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect

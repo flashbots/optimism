@@ -24,6 +24,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
@@ -149,6 +150,7 @@ func startTracing() error {
 	)
 
 	otel.SetTracerProvider(tracerprovider)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 	return nil
 }
 
@@ -209,6 +211,17 @@ var (
 	tracer = otel.Tracer("builder-boost")
 )
 
+func getCallTraceCtx(ctx context.Context) context.Context {
+	// from the context extract the tracepoint to send over the http request
+	// and create a new context with that kv to be sent over jsonrpc
+	headers := http.Header{}
+
+	propagator := otel.GetTextMapPropagator()
+	propagator.Inject(ctx, propagation.HeaderCarrier(headers))
+
+	return rpc.NewContextWithHeaders(ctx, headers)
+}
+
 func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *engine.PayloadAttributes) (*engine.ForkChoiceResponse, error) {
 	var result engine.ForkChoiceResponse
 	if err := b.clt.Call(&result, "engine_forkchoiceUpdatedV3", update, params); err != nil {
@@ -220,7 +233,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 	// if there are attributes, relay the info to the builder too
 	if params != nil {
 		// Start the trace with contextual attributes
-		ctx, span := tracer.Start(context.Background(), "fcu")
+		traceCtx, span := tracer.Start(context.Background(), "fcu")
 		span.SetAttributes(attribute.Int64("timestamp", int64(params.Timestamp)))
 		span.SetAttributes(attribute.String("headBlockHash", update.HeadBlockHash.String()))
 		span.SetAttributes(attribute.String("parentHash", params.BeaconRoot.String()))
@@ -231,10 +244,10 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 		}
 
 		// create a new payload lifecycle for this payload and store it
-		b.payloadIdToPayloadTracker.Add(*result.PayloadID, &payloadTracker{traceCtx: ctx, traceSpan: span})
+		b.payloadIdToPayloadTracker.Add(*result.PayloadID, &payloadTracker{traceCtx: traceCtx, traceSpan: span})
 
 		go func() {
-			_, span := tracer.Start(ctx, "wait_for_builder")
+			_, span := tracer.Start(traceCtx, "wait_for_builder")
 			defer span.End()
 
 			now := time.Now()
@@ -243,7 +256,8 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 			for {
 				// with stream or polling if syncing.
 				var result2 engine.ForkChoiceResponse
-				if err := b.builder.Call(&result2, "engine_forkchoiceUpdatedV3", update, params); err != nil {
+
+				if err := b.builder.CallContext(getCallTraceCtx(traceCtx), &result2, "engine_forkchoiceUpdatedV3", update, params); err != nil {
 					log.Error("Failed to call 'builder' engine_forkchoiceUpdatedV3", "err", err)
 				} else {
 					status := result2.PayloadStatus.Status
