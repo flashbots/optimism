@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -218,7 +219,12 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 
 	// if there are attributes, relay the info to the builder too
 	if params != nil {
+		// Start the trace with contextual attributes
 		ctx, span := tracer.Start(context.Background(), "fcu")
+		span.SetAttributes(attribute.Int64("timestamp", int64(params.Timestamp)))
+		span.SetAttributes(attribute.String("headBlockHash", update.HeadBlockHash.String()))
+		span.SetAttributes(attribute.String("parentHash", params.BeaconRoot.String()))
+		span.SetAttributes(attribute.String("payloadID", result.PayloadID.String()))
 
 		if result.PayloadID == nil {
 			panic(fmt.Sprintf("BUG: Unexpected nil payloadID in ForkchoiceUpdatedV3 result with params: %v", result))
