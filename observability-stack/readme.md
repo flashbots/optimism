@@ -9,8 +9,8 @@ the future.
 
 ## Dashboards
 
-- [x] L2<>L2 Proposer (aka `op-geth`)
-- [ ] L2 Builder (aka `builder-op-geth`)
+- [x] L2<>L2 Proposer (aka `op-node`)
+- [x] L2 Builder (aka `builder-op-geth`)
 
 ## Usage
 
