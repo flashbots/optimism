@@ -237,7 +237,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 	log.Info("ForkchoiceUpdatedV3", "head", update.HeadBlockHash, "payloadID", result.PayloadID)
 
 	// if there are attributes, relay the info to the builder too
-	if params != nil {
+	if params != nil && !params.NoTxPool {
 		// Start the trace with contextual attributes
 		traceCtx, span := tracer.Start(context.Background(), "fcu")
 		span.SetAttributes(attribute.Int64("timestamp", int64(params.Timestamp)))
