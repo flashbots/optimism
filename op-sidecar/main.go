@@ -330,7 +330,8 @@ func (b *backend) GetPayloadV3(payloadID engine.PayloadID) (*engine.ExecutionPay
 	// get the payload tracker instance
 	payloadTracker, ok := b.payloadIdToPayloadTracker.Get(payloadID)
 	if !ok {
-		// BUG? The payload tracker should be available (except for this blocks if we are in the middle of a block)
+		// This can happen if the op-node is building blocks with NoTxPool which are deterministic blocks
+		// and we are not sending them to op-builder since the builder cannot compete with the op-geth node.
 		log.Debug("Payload tracker not found", "payloadID", payloadID)
 		return &opGethPayload, nil
 	}
