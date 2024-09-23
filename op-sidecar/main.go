@@ -40,12 +40,16 @@ var (
 	defaultBuilderURL  = "http://localhost:8552"
 )
 
+var (
+	jwtTokenStr = flag.String("jwt-token", defaultJwtTokenStr, "JWT token to authenticate with the RPC")
+	opgethURL   = flag.String("opgeth-url", defaultOpgethURL, "URL of the op-geth RPC")
+	builderURL  = flag.String("builder-url", defaultBuilderURL, "URL of the builder RPC")
+	tracing     = flag.Bool("tracing", false, "Enable tracing")
+	logLevelStr = flag.String("log-level", "INFO", "")
+	boostSync   = flag.Bool("boost-sync", true, "Enable boost sync")
+)
+
 func main() {
-	jwtTokenStr := flag.String("jwt-token", defaultJwtTokenStr, "JWT token to authenticate with the RPC")
-	opgethURL := flag.String("opgeth-url", defaultOpgethURL, "URL of the op-geth RPC")
-	builderURL := flag.String("builder-url", defaultBuilderURL, "URL of the builder RPC")
-	tracing := flag.Bool("tracing", false, "Enable tracing")
-	logLevelStr := flag.String("log-level", "INFO", "")
 	flag.Parse()
 
 	var logLevel slog.Level
@@ -156,8 +160,10 @@ func startTracing() error {
 
 // TODO: Not sure why types.Header was not working
 type header struct {
+	Hash       common.Hash    `json:"hash"`
 	ParentHash common.Hash    `json:"parentHash"`
 	Number     hexutil.Uint64 `json:"number"`
+	StateRoot  common.Hash    `json:"stateRoot"`
 }
 
 func (b *backend) trackBuilderBlock() error {
@@ -239,6 +245,15 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 		span.SetAttributes(attribute.String("parentHash", params.BeaconRoot.String()))
 		span.SetAttributes(attribute.String("payloadID", result.PayloadID.String()))
 
+		// get the last block of this fella
+		var lastBlock header
+		if err := b.builder.Call(&lastBlock, "eth_getBlockByNumber", rpc.LatestBlockNumber, false); err != nil {
+			log.Error("Failed to get last block", "err", err)
+
+			// just return the default op-geth response
+			return &result, nil
+		}
+
 		if result.PayloadID == nil {
 			panic(fmt.Sprintf("BUG: Unexpected nil payloadID in ForkchoiceUpdatedV3 result with params: %v", result))
 		}
@@ -295,7 +310,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 				}
 			}
 		}()
-	} else {
+	} else if *boostSync {
 		// TODO: As with the engine_newPayloadV3 call, this fails if the builder node is not synced with the chain.
 		var result engine.ForkChoiceResponse
 		if err := b.clt.Call(&result, "engine_forkchoiceUpdatedV3", update, params); err != nil {
@@ -368,11 +383,12 @@ func (b *backend) NewPayloadV3(params engine.ExecutableData, versionedHashes []c
 		}()
 	}
 
-	{
+	if *boostSync {
 		// TODO: This fails if the builder node is not synced with the chain.
 		// We send both newPayload and fcu (withotu attributes) to advance the builder EL node
 		// at the same time we advance the proposer node.
-		if err := b.builder.Call(nil, "engine_newPayloadV3", params, versionedHashes, beaconRoot); err != nil {
+		var result1 engine.PayloadStatusV1
+		if err := b.builder.Call(&result1, "engine_newPayloadV3", params, versionedHashes, beaconRoot); err != nil {
 			log.Error("Failed to sync new payload with engine", "err", err)
 		}
 	}
