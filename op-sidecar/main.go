@@ -80,11 +80,12 @@ func main() {
 	}
 
 	backend := &backend{
-		clt:                              opGethRef,
-		builder:                          builderRef,
-		builderBlock:                     make(chan *header),
-		payloadIdToPayloadTracker:        lru.NewCache[engine.PayloadID, *payloadTracker](100),
-		payloadTimestampToPayloadTracker: lru.NewCache[uint64, *payloadTracker](100),
+		clt:                               opGethRef,
+		builder:                           builderRef,
+		builderBlock:                      make(chan *header),
+		payloadIdToPayloadTracker:         lru.NewCache[engine.PayloadID, *payloadTracker](100),
+		payloadTimestampToPayloadTracker:  lru.NewCache[uint64, *payloadTracker](100),
+		payloadParentRootToPayloadTracker: lru.NewCache[common.Hash, *payloadTracker](100),
 	}
 	if err := srv.RegisterName("eth", &ethBackend{backend}); err != nil {
 		log.Error("Failed to register 'eth' backend", "err", err)
@@ -195,8 +196,9 @@ type backend struct {
 	// Ideally, we only keep one payload a time, since only one block is being built at a time.
 	// But, since I am not sure about the workflow between op-node <> op-geth, we will keep multiple
 	// payload entries for now. Using an LRU cache so that I do not have to worry about cleaning up.
-	payloadIdToPayloadTracker        *lru.Cache[engine.PayloadID, *payloadTracker]
-	payloadTimestampToPayloadTracker *lru.Cache[uint64, *payloadTracker]
+	payloadIdToPayloadTracker         *lru.Cache[engine.PayloadID, *payloadTracker]
+	payloadTimestampToPayloadTracker  *lru.Cache[uint64, *payloadTracker]
+	payloadParentRootToPayloadTracker *lru.Cache[common.Hash, *payloadTracker]
 
 	// notification for builder block
 	builderBlock chan *header
@@ -207,6 +209,8 @@ type payloadTracker struct {
 
 	traceCtx  context.Context
 	traceSpan trace2.Span
+
+	deliveredCh chan struct{}
 }
 
 func (p *payloadTracker) Close() {
@@ -238,6 +242,14 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 
 	// if there are attributes, relay the info to the builder too
 	if params != nil && !params.NoTxPool {
+		log.Info("ForkchoiceUpdatedV3 with attributes", "parentBlock", params.BeaconRoot, "timestamp", params.Timestamp)
+
+		_, ok := b.payloadParentRootToPayloadTracker.Get(update.HeadBlockHash)
+		if ok {
+			// Log it for now, later on figure out what we do here.
+			log.Error("Payload already exists for this parent block", "parentBlock", params.BeaconRoot)
+		}
+
 		// Start the trace with contextual attributes
 		traceCtx, span := tracer.Start(context.Background(), "fcu")
 		span.SetAttributes(attribute.Int64("timestamp", int64(params.Timestamp)))
@@ -259,7 +271,10 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 		}
 
 		// create a new payload lifecycle for this payload and store it
-		b.payloadIdToPayloadTracker.Add(*result.PayloadID, &payloadTracker{traceCtx: traceCtx, traceSpan: span})
+		pTracker := &payloadTracker{traceCtx: traceCtx, traceSpan: span, deliveredCh: make(chan struct{})}
+
+		b.payloadIdToPayloadTracker.Add(*result.PayloadID, pTracker)
+		b.payloadParentRootToPayloadTracker.Add(update.HeadBlockHash, pTracker)
 
 		go func() {
 			_, span := tracer.Start(traceCtx, "wait_for_builder")
@@ -269,6 +284,13 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 			tm := time.NewTimer(1 * time.Second)
 
 			for {
+				// if the payload is delivered already we were late for syncing.
+				select {
+				case <-pTracker.deliveredCh:
+					return
+				default:
+				}
+
 				// with stream or polling if syncing.
 				var result2 engine.ForkChoiceResponse
 
@@ -343,6 +365,7 @@ func (b *backend) GetPayloadV3(payloadID engine.PayloadID) (*engine.ExecutionPay
 
 	if !payloadTracker.builderHasPayload {
 		// The builder did not sync up to deliver the block, return the op-geth payload
+		close(payloadTracker.deliveredCh) // Close the channel so that the builder does not try to build this block.
 		return &opGethPayload, nil
 	}
 
