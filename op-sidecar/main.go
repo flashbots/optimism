@@ -335,7 +335,7 @@ func (b *backend) ForkchoiceUpdatedV3(update engine.ForkchoiceStateV1, params *e
 	} else if *boostSync {
 		// TODO: As with the engine_newPayloadV3 call, this fails if the builder node is not synced with the chain.
 		var result engine.ForkChoiceResponse
-		if err := b.clt.Call(&result, "engine_forkchoiceUpdatedV3", update, params); err != nil {
+		if err := b.builder.Call(&result, "engine_forkchoiceUpdatedV3", update, params); err != nil {
 			return nil, err
 		}
 	}
