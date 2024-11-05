@@ -302,7 +302,7 @@ def devnet_deploy(paths):
         run_command(['docker', 'compose', 'up', '-d', 'da-server'], cwd=paths.ops_bedrock_dir, env=docker_env)
 
     # Optionally bring up the builders.
-    if DEVNET_BUILDER:
+    if False:
         log.info('Bringing up `builders`.')
         run_command(['docker', 'compose', 'up', '-d', 'builder-op-node', 'builder-op-geth'],
                     cwd=paths.ops_bedrock_dir,
