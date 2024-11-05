@@ -364,15 +364,13 @@ services:
       - "--rpc2=http://builder-op-geth:8545"
 
   rollup-boost:
-    build:
-      context: .
-      dockerfile: Dockerfile.rollup-boost
+    image: flashbots/rollup-boost
     ports:
       - "8081:8081"
     volumes:
       - "${PWD}/test-jwt-secret.txt:/config/jwt-secret.txt"
     entrypoint:
-      - "/app/rollup-boost"
+      - "rollup-boost"
       - "--jwt-path=/config/jwt-secret.txt"
       - "--l2-url=http://l2:8551"
       - "--builder-url=http://builder-op-geth:8551"
