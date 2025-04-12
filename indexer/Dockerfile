@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.21.1-alpine3.18 as builder
+FROM --platform=$BUILDPLATFORM golang:1.22.7-alpine3.20 as builder
 
 RUN apk add --no-cache make ca-certificates gcc musl-dev linux-headers git jq bash
 
@@ -21,7 +21,7 @@ COPY ./go.sum /app/go.sum
 WORKDIR /app/indexer
 RUN make indexer
 
-FROM alpine:3.18
+FROM alpine:3.20
 COPY --from=builder /app/indexer/indexer /usr/local/bin
 COPY --from=builder /app/indexer/migrations /app/indexer/migrations
 

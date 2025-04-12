@@ -9,10 +9,10 @@ ARG TARGETARCH
 
 # All target images use this as base image, and add the final build results.
 # It will default to the target platform.
-ARG TARGET_BASE_IMAGE=alpine:3.18
+ARG TARGET_BASE_IMAGE=alpine:3.20
 
 # We may be cross-building for another platform. Specify which platform we need as builder.
-FROM --platform=$BUILDPLATFORM golang:1.21.3-alpine3.18 as builder
+FROM --platform=$BUILDPLATFORM golang:1.22.7-alpine3.20 as builder
 
 RUN apk add --no-cache make gcc musl-dev linux-headers git jq bash
 
