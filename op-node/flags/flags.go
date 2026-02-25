@@ -280,6 +280,13 @@ var (
 		Value:    50 * time.Millisecond,
 		Category: SequencerCategory,
 	}
+	MaxDrainEventsFlag = &cli.Uint64Flag{
+		Name:     "sequencer.max-drain-events",
+		Usage:    "Maximum number of events to drain per iteration in the driver event loop before yielding to the sequencer. Defaults to 20 if 0.",
+		EnvVars:  prefixEnvVars("SEQUENCER_MAX_DRAIN_EVENTS"),
+		Value:    20,
+		Category: SequencerCategory,
+	}
 	FinalityLookbackFlag = &cli.Uint64Flag{
 		Name:     "finality.lookback",
 		Usage:    "Number of L1 blocks to look back for finality verification. Uses default calculation if 0 (considers alt-DA challenge/resolve windows if applicable).",
@@ -492,6 +499,7 @@ var optionalFlags = []cli.Flag{
 	SequencerL1Confs,
 	SequencerRecoverMode,
 	SequencerSealingDurationFlag,
+	MaxDrainEventsFlag,
 	FinalityLookbackFlag,
 	FinalityDelayFlag,
 	L1EpochPollIntervalFlag,

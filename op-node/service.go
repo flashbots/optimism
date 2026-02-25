@@ -221,6 +221,7 @@ func NewDriverConfig(ctx cliiface.Context) *driver.Config {
 		SequencerMaxSafeLag:      ctx.Uint64(flags.SequencerMaxSafeLagFlag.Name),
 		RecoverMode:              ctx.Bool(flags.SequencerRecoverMode.Name),
 		SequencerSealingDuration: ctx.Duration(flags.SequencerSealingDurationFlag.Name),
+		MaxDrainEvents:           ctx.Uint64(flags.MaxDrainEventsFlag.Name),
 	}
 
 	// Populate finality config from flags. A finality config with null fields

@@ -36,6 +36,12 @@ type Config struct {
 	// If this is <= 0 it is automatically adjusted to 50ms.
 	SequencerSealingDuration time.Duration `json:"sequencer_sealing_duration"`
 
+	// MaxDrainEvents is the maximum number of events to drain from the event queue per iteration
+	// in the driver event loop. This caps how many events are processed before yielding to the
+	// sequencer, preventing event processing from starving block production.
+	// If this is <= 0 it defaults to 20.
+	MaxDrainEvents uint64 `json:"max_drain_events"`
+
 	// Finalizer contains runtime configuration for finality behavior.
 	Finalizer *finality.Config `json:"finalizer,omitempty"`
 }
