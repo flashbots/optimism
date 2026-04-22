@@ -121,8 +121,17 @@ impl From<alloy_rpc_types_engine::PayloadAttributes> for OpPayloadAttrs {
 
 impl reth_payload_primitives::PayloadAttributes for OpPayloadAttrs {
     fn payload_id(&self, parent_hash: &B256) -> PayloadId {
-        // Use the default engine API message version for computing the payload id.
-        payload_id_optimism(parent_hash, &self.0, EngineApiMessageVersion::default() as u8)
+        // op-node's `Config.ForkchoiceUpdatedVersion` returns FCUV3 for every
+        // Ecotone+ timestamp (see op-node/rollup/types.go) and has no Isthmus
+        // or Jovian branch. op-geth's `BuildPayloadArgs.Id` derives the
+        // payload-id version byte directly from the FCU method
+        // (`out[0] = byte(args.Version)`), so all production op-stack payload
+        // ids start with 0x03. Using `EngineApiMessageVersion::default()`
+        // (= V4 in reth, inherited from Prague-active Ethereum mainnet)
+        // produces a byte op-geth never emits and breaks payload-id lookups
+        // at rollup-boost / op-node — flashblocks stop being delivered.
+        // Revisit if op-node adds a V4 branch on a future hardfork.
+        payload_id_optimism(parent_hash, &self.0, EngineApiMessageVersion::V3 as u8)
     }
 
     fn timestamp(&self) -> u64 {
